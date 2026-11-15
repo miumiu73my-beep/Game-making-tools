@@ -1,0 +1,833 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>リソースくん | Game-making-tools</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icons/icon.svg" type="image/svg+xml"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0e1729"><style>*{box-sizing:border-box}html{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:#0e1729;color:#e8eefb}body{margin:0;min-height:100dvh;padding:calc(20px + env(safe-area-inset-top)) 16px calc(36px + env(safe-area-inset-bottom))}main{max-width:900px;margin:auto}h1{font-size:clamp(24px,5vw,35px);margin:18px 0 6px}p{line-height:1.6;color:#b3c1d5}.back{color:#93d5fb}.panel{padding:18px;background:#17263b;border:1px solid #30435e;border-radius:17px;margin:18px 0}label{display:block;font-size:14px;margin:12px 0 7px;color:#d8e4ef}input,select,button{font:inherit}input[type=file],input[type=text],select,input[type=color]{width:100%;max-width:100%;padding:12px;background:#0c1829;border:1px solid #496078;border-radius:10px;color:#e8eefb}input[type=color]{height:48px}button,.download{display:inline-flex;align-items:center;justify-content:center;padding:12px 16px;border:0;border-radius:10px;background:#71c5ed;color:#102137;font-weight:700;text-decoration:none;cursor:pointer;margin:7px 6px 7px 0}.download{background:#acf0ca}.download:focus-visible,button:focus-visible{outline:3px solid #fff}button:disabled{opacity:.5;cursor:default}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d192a;padding:14px;border-radius:12px;font-size:13px}small,.note{color:#a8bbd1}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.item{padding:10px 0;border-bottom:1px solid #40506b}a{color:#a6defa}#result:not(:empty){margin-top:16px}</style></head><body><main><a class="back" href="./index.html">← ツール一覧へ</a><h1>リソースくん</h1><p>元の参照抽出・重複・欠番判定ロジックをブラウザで使用します。選んだファイルはサーバーにアップロードされません。</p><section class="panel"><label>複数ファイルを選択<input id="files" type="file" multiple></label><label>またはフォルダを選択（対応ブラウザのみ）<input id="folder" type="file" webkitdirectory multiple></label><button id="run">リソースを解析する</button><p class="note">iOSでフォルダ選択ができない場合は上の「複数ファイル」を使ってください。</p></section><section id="result" aria-live="polite"></section></main><script src="./browser-utils.js"></script><script>
+const CONFIG = {
+  outputFolderName: "リソースくん_出力",
+  textExtensions: ["txt", "md", "json", "js", "csv"],
+  physicalAssetExtensions: [
+    "png", "jpg", "jpeg", "webp", "psd", "gif", "bmp", "heic",
+    "mp3", "wav", "m4a", "ogg", "aac", "caf",
+    "mp4", "webm", "mov"
+  ],
+  matchableExtensions: [
+    "png", "jpg", "jpeg", "webp", "psd", "gif", "bmp", "heic",
+    "mp3", "wav", "m4a", "ogg", "aac", "caf",
+    "mp4", "webm", "mov",
+    "txt", "md", "json", "js", "csv"
+  ],
+  referenceKeys: ["bg", "fg", "se", "bgm", "effect", "nextFile", "actorId", "resourceId"],
+  maxScanFileSizeKB: 4096,
+  maxSampleRefsPerResource: 3,
+  overwrite: true,
+};
+function analyzeResources(fm, files, inheritedWarnings) {
+  const warnings = Array.isArray(inheritedWarnings) ? inheritedWarnings.slice() : [];
+  const fileInfos = files.map((path) => buildFileInfo(fm, path));
+  const textFiles = fileInfos.filter((info) => CONFIG.textExtensions.includes(info.ext));
+  const physicalFiles = fileInfos.filter((info) => CONFIG.physicalAssetExtensions.includes(info.ext));
+  const matchableFiles = fileInfos.filter((info) => CONFIG.matchableExtensions.includes(info.ext));
+
+  const groups = {};
+  const extractedRefs = [];
+
+  for (const fileInfo of textFiles.sort((a, b) => compareByPath(a.path, b.path))) {
+    if (fileInfo.sizeKB != null && fileInfo.sizeKB > CONFIG.maxScanFileSizeKB) {
+      warnings.push(`大きいテキストを簡易スキップ: ${fileInfo.fileName} (${Math.round(fileInfo.sizeKB)}KB)`);
+      continue;
+    }
+
+    let refs = [];
+    try {
+      refs = extractReferencesFromText(fm, fileInfo);
+    } catch (error) {
+      warnings.push(`本文を読めませんでした: ${fileInfo.fileName} / ${String(error)}`);
+      continue;
+    }
+
+    extractedRefs.push(...refs);
+    for (const ref of refs) addReferenceToGroups(groups, ref);
+  }
+
+  for (const info of physicalFiles.sort((a, b) => compareByPath(a.path, b.path))) {
+    addPhysicalFileToGroups(groups, info);
+  }
+
+  for (const info of matchableFiles.sort((a, b) => compareByPath(a.path, b.path))) {
+    attachMatchableFileToExistingGroups(groups, info);
+  }
+
+  const uniqueResources = finalizeGroups(groups);
+  const duplicateGroups = buildDuplicateGroups(uniqueResources);
+  const missingNumbers = findMissingNumbers(uniqueResources);
+
+  return {
+    generatedAt: formatDate(new Date()),
+    scannedFileCount: fileInfos.length,
+    scannedTextFileCount: textFiles.length,
+    scannedPhysicalFileCount: physicalFiles.length,
+    extractedReferenceCount: extractedRefs.length,
+    uniqueResourceCount: uniqueResources.length,
+    warnings,
+    uniqueResources,
+    duplicateGroups,
+    missingNumbers,
+    scannedFiles: fileInfos.map((info) => ({
+      fileName: info.fileName,
+      ext: info.ext,
+      folder: info.folder,
+      path: info.path
+    }))
+  };
+}
+
+function buildFileInfo(fm, filePath) {
+  const fileName = getFileName(filePath);
+  const baseName = getBaseName(filePath);
+  const ext = getExtension(filePath);
+  const modifiedAt = safeModifiedDate(fm, filePath);
+  const sizeKB = safeFileSizeKB(fm, filePath);
+  return {
+    fileName,
+    baseName,
+    ext,
+    path: filePath,
+    folder: parentFolderName(filePath),
+    modifiedAt: modifiedAt ? formatDate(modifiedAt) : "",
+    sizeKB
+  };
+}
+
+function extractReferencesFromText(fm, fileInfo) {
+  const text = readTextRobustly(fm, fileInfo.path);
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const refs = [];
+
+  let inBgCompatMap = false;
+  let bgCompatDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = stripBom(lines[i]);
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (/\bBG_COMPAT_MAP\b\s*=\s*Object\.freeze\s*\(/.test(line)) {
+      inBgCompatMap = true;
+      bgCompatDepth = 0;
+    }
+
+    if (inBgCompatMap) {
+      bgCompatDepth += countChar(rawLine, "{");
+      bgCompatDepth -= countChar(rawLine, "}");
+
+      const mapRe = /\b([A-Za-z0-9_${}\-]+)\s*:\s*["'`]([^"'`]+)["'`]/g;
+      let mm;
+      while ((mm = mapRe.exec(rawLine)) !== null) {
+        const fromValue = cleanupQuotedValue(mm[1]);
+        const toValue = cleanupQuotedValue(mm[2]);
+        if (looksLikeResourceValue(fromValue, "bgCompatFrom")) {
+          refs.push(makeRefRecord(fileInfo, i + 1, rawLine, "bgCompatFrom", fromValue));
+        }
+        if (looksLikeResourceValue(toValue, "bgCompatTo")) {
+          refs.push(makeRefRecord(fileInfo, i + 1, rawLine, "bgCompatTo", toValue));
+        }
+      }
+
+      if (bgCompatDepth <= 0) {
+        inBgCompatMap = false;
+      }
+    }
+
+    const directRe = /\b(bg|fg|se|bgm|effect|nextFile|actorId|resourceId)\s*:\s*["'`]([^"'`]+)["'`]/g;
+    let m;
+    while ((m = directRe.exec(rawLine)) !== null) {
+      const kind = m[1];
+      const value = cleanupQuotedValue(m[2]);
+      if (looksLikeResourceValue(value, kind)) {
+        refs.push(makeRefRecord(fileInfo, i + 1, rawLine, kind, value));
+      }
+    }
+
+    const constRe = /\b(DEFAULT_BG_ID|DEFAULT_FG_ID|DEFAULT_SE_ID|DEFAULT_BGM_ID)\b\s*=\s*["'`]([^"'`]+)["'`]/g;
+    let cm;
+    while ((cm = constRe.exec(rawLine)) !== null) {
+      const constName = String(cm[1]);
+      const value = cleanupQuotedValue(cm[2]);
+      const kind = constName.includes("BG") ? "defaultBg" : constName.includes("FG") ? "defaultFg" : constName.includes("SE") ? "defaultSe" : "defaultBgm";
+      if (looksLikeResourceValue(value, kind)) {
+        refs.push(makeRefRecord(fileInfo, i + 1, rawLine, kind, value));
+      }
+    }
+
+    const fileLiteralRe = /["'`]([^"'`]+\.(?:js|json|png|jpg|jpeg|webp|psd|gif|bmp|heic|mp3|wav|m4a|ogg|aac|caf|mp4|mov|webm))["'`]/gi;
+    let fm2;
+    while ((fm2 = fileLiteralRe.exec(rawLine)) !== null) {
+      const value = cleanupQuotedValue(fm2[1]);
+      if (looksLikeGenericFileLink(value)) {
+        refs.push(makeRefRecord(fileInfo, i + 1, rawLine, "fileLiteral", value));
+      }
+    }
+  }
+
+  return dedupeRefRecords(refs);
+}
+
+function makeRefRecord(fileInfo, lineNumber, rawLine, kind, value) {
+  const cleaned = cleanupQuotedValue(value);
+  const sequence = extractSequence(cleaned);
+  return {
+    kind,
+    value: cleaned,
+    key: buildDedupeKey(cleaned, kind),
+    sourceFile: fileInfo.fileName,
+    sourcePath: fileInfo.path,
+    line: lineNumber,
+    excerpt: cleanupExcerpt(rawLine),
+    sequenceGroup: sequence.group,
+    sequenceNumber: sequence.number
+  };
+}
+
+function dedupeRefRecords(refs) {
+  const seen = {};
+  const out = [];
+  for (const ref of refs) {
+    const key = [ref.kind, ref.value, ref.sourcePath, ref.line].join("||");
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(ref);
+  }
+  return out;
+}
+
+function addReferenceToGroups(groups, ref) {
+  if (!ref || !ref.key) return;
+  const group = ensureGroup(groups, ref.key, ref.value);
+  group.types.add(ref.kind);
+  group.references.push({
+    kind: ref.kind,
+    value: ref.value,
+    sourceFile: ref.sourceFile,
+    sourcePath: ref.sourcePath,
+    line: ref.line,
+    excerpt: ref.excerpt
+  });
+
+  if (!group.firstAppearance || compareAppearance(ref, group.firstAppearance) < 0) {
+    group.firstAppearance = {
+      sourceFile: ref.sourceFile,
+      sourcePath: ref.sourcePath,
+      line: ref.line,
+      excerpt: ref.excerpt
+    };
+  }
+
+  if (!group.sequenceGroup && ref.sequenceGroup) group.sequenceGroup = ref.sequenceGroup;
+  if (group.sequenceNumber == null && ref.sequenceNumber != null) group.sequenceNumber = ref.sequenceNumber;
+}
+
+function addPhysicalFileToGroups(groups, info) {
+  const resourceName = info.baseName;
+  const key = buildDedupeKey(resourceName, "physical");
+  if (!key) return;
+
+  const group = ensureGroup(groups, key, resourceName);
+  group.types.add("physical");
+  pushUniqueFile(group.physicalFiles, info);
+  pushUniqueFile(group.matchedFiles, info);
+
+  const sequence = extractSequence(resourceName);
+  if (!group.sequenceGroup && sequence.group) group.sequenceGroup = sequence.group;
+  if (group.sequenceNumber == null && sequence.number != null) group.sequenceNumber = sequence.number;
+
+  if (!group.firstAppearance) {
+    group.firstAppearance = {
+      sourceFile: "",
+      sourcePath: "",
+      line: 0,
+      excerpt: "",
+      fallback: info.modifiedAt ? `mtime:${info.modifiedAt}` : "file-only"
+    };
+  }
+}
+
+function attachMatchableFileToExistingGroups(groups, info) {
+  const keyBase = buildDedupeKey(info.baseName, "physical");
+  const keyFile = buildDedupeKey(info.fileName, "nextFile");
+
+  if (groups[keyBase]) pushUniqueFile(groups[keyBase].matchedFiles, info);
+  if (groups[keyFile] && keyFile !== keyBase) pushUniqueFile(groups[keyFile].matchedFiles, info);
+}
+
+function ensureGroup(groups, key, displayName) {
+  if (!groups[key]) {
+    groups[key] = {
+      key,
+      displayName: displayName || key,
+      types: new Set(),
+      references: [],
+      physicalFiles: [],
+      matchedFiles: [],
+      firstAppearance: null,
+      sequenceGroup: "",
+      sequenceNumber: null
+    };
+  } else if (!groups[key].displayName && displayName) {
+    groups[key].displayName = displayName;
+  }
+  return groups[key];
+}
+
+function finalizeGroups(groups) {
+  const out = [];
+
+  Object.keys(groups).sort().forEach((key) => {
+    const group = groups[key];
+    const refKinds = Array.from(group.types).filter((v) => v !== "physical").sort();
+    const physicalFiles = group.physicalFiles.slice().sort((a, b) => compareByPath(a.path, b.path));
+    const matchedFiles = group.matchedFiles.slice().sort((a, b) => compareByPath(a.path, b.path));
+    const references = group.references.slice().sort(compareReference);
+
+    const preferredName = choosePreferredDisplayName(group, references, physicalFiles);
+    const status = computeStatus(references, physicalFiles, matchedFiles);
+
+    out.push({
+      resourceId: preferredName,
+      normalizedKey: group.key,
+      kinds: refKinds,
+      status,
+      firstAppearance: group.firstAppearance || {
+        sourceFile: "",
+        sourcePath: "",
+        line: 0,
+        excerpt: "",
+        fallback: "not-found"
+      },
+      referenceCount: references.length,
+      referenceSamples: references.slice(0, CONFIG.maxSampleRefsPerResource).map((ref) => ({
+        kind: ref.kind,
+        sourceFile: ref.sourceFile,
+        sourcePath: ref.sourcePath,
+        line: ref.line,
+        excerpt: ref.excerpt
+      })),
+      physicalFiles: physicalFiles.map(minifyFileInfo),
+      matchedFiles: matchedFiles.map(minifyFileInfo),
+      sequenceGroup: group.sequenceGroup,
+      sequenceNumber: group.sequenceNumber
+    });
+  });
+
+  return out.sort(compareResourceRecord);
+}
+
+function choosePreferredDisplayName(group, references, physicalFiles) {
+  const order = [
+    "resourceId",
+    "bg", "fg", "se", "bgm", "effect", "actorId", "nextFile",
+    "defaultBg", "defaultFg", "defaultSe", "defaultBgm",
+    "bgCompatFrom", "bgCompatTo", "fileLiteral"
+  ];
+
+  for (const kind of order) {
+    const found = references.find((ref) => ref.kind === kind && ref.value);
+    if (found) return found.value;
+  }
+
+  if (physicalFiles.length) return physicalFiles[0].baseName;
+  return group.displayName || group.key;
+}
+
+function computeStatus(references, physicalFiles, matchedFiles) {
+  const hasRef = references.length > 0;
+  const hasPhysical = physicalFiles.length > 0;
+  const hasLinkedFile = matchedFiles.length > 0;
+
+  if (hasRef && hasPhysical) return "参照+実ファイル";
+  if (hasRef && hasLinkedFile) return "参照+関連ファイル";
+  if (hasPhysical) return "実ファイルのみ";
+  if (hasRef) return "参照のみ";
+  if (hasLinkedFile) return "関連ファイルのみ";
+  return "不明";
+}
+
+function buildDuplicateGroups(uniqueResources) {
+  const out = [];
+  for (const item of uniqueResources) {
+    if (item.physicalFiles.length <= 1) continue;
+    out.push({
+      resourceId: item.resourceId,
+      kept: item.physicalFiles[0].path,
+      duplicates: item.physicalFiles.slice(1).map((info) => info.path)
+    });
+  }
+  return out;
+}
+
+function findMissingNumbers(resources) {
+  const groups = {};
+  for (const item of resources) {
+    if (!item.sequenceGroup || item.sequenceNumber == null) continue;
+    if (!groups[item.sequenceGroup]) groups[item.sequenceGroup] = [];
+    groups[item.sequenceGroup].push(item.sequenceNumber);
+  }
+
+  const out = [];
+  Object.keys(groups).sort().forEach((group) => {
+    const nums = uniqueNumbers(groups[group]).sort((a, b) => a - b);
+    if (nums.length < 2) return;
+    const missing = [];
+    for (let n = nums[0]; n <= nums[nums.length - 1]; n++) {
+      if (nums.indexOf(n) === -1) missing.push(n);
+    }
+    if (missing.length) {
+      out.push({ group, existing: nums, missing });
+    }
+  });
+  return out;
+}
+
+function buildTextReport(analysis) {
+  const lines = [];
+  lines.push("リソースくん レポート");
+  lines.push(`生成日時: ${analysis.generatedAt}`);
+  lines.push(`走査ファイル数: ${analysis.scannedFileCount}`);
+  lines.push(`走査テキスト数: ${analysis.scannedTextFileCount}`);
+  lines.push(`走査実ファイル数: ${analysis.scannedPhysicalFileCount}`);
+  lines.push(`抽出参照数: ${analysis.extractedReferenceCount}`);
+  lines.push(`ユニーク資産数: ${analysis.uniqueResourceCount}`);
+  lines.push(`重複グループ数: ${analysis.duplicateGroups.length}`);
+  lines.push(`欠番グループ数: ${analysis.missingNumbers.length}`);
+  lines.push("");
+
+  if (analysis.warnings.length) {
+    lines.push("[注意]");
+    analysis.warnings.forEach((w) => lines.push("・" + w));
+    lines.push("");
+  }
+
+  lines.push("[抽出一覧]");
+  if (!analysis.uniqueResources.length) {
+    lines.push("なし");
+  } else {
+    analysis.uniqueResources.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item.resourceId}`);
+      lines.push(`   status: ${item.status}`);
+      lines.push(`   kinds : ${item.kinds.length ? item.kinds.join(", ") : "-"}`);
+      lines.push(`   first : ${formatAppearance(item.firstAppearance)}`);
+      lines.push(`   refs  : ${item.referenceCount}`);
+      lines.push(`   files : ${formatFileList(item.physicalFiles)}`);
+      lines.push(`   links : ${formatFileList(item.matchedFiles)}`);
+      if (item.referenceSamples.length) {
+        item.referenceSamples.forEach((sample) => {
+          lines.push(`   sample: ${sample.kind} @ ${sample.sourceFile}:${sample.line} / ${sample.excerpt}`);
+        });
+      }
+    });
+  }
+  lines.push("");
+
+  lines.push("[重複]");
+  if (!analysis.duplicateGroups.length) {
+    lines.push("なし");
+  } else {
+    analysis.duplicateGroups.forEach((group) => {
+      lines.push(`・${group.resourceId}`);
+      lines.push(`  keep: ${group.kept}`);
+      group.duplicates.forEach((dup) => lines.push(`  dup : ${dup}`));
+    });
+  }
+  lines.push("");
+
+  lines.push("[欠番]");
+  if (!analysis.missingNumbers.length) {
+    lines.push("なし");
+  } else {
+    analysis.missingNumbers.forEach((item) => {
+      lines.push(`・${item.group}`);
+      lines.push(`  existing: ${item.existing.join(", ")}`);
+      lines.push(`  missing : ${item.missing.join(", ")}`);
+    });
+  }
+  lines.push("");
+
+  lines.push("[走査ファイル]");
+  analysis.scannedFiles.forEach((file) => {
+    lines.push(`- ${file.fileName} (${file.ext || "no-ext"}) / ${file.path}`);
+  });
+
+  return lines.join("\n");
+}
+
+function formatAppearance(ap) {
+  if (!ap) return "-";
+  if (ap.line > 0) return `${ap.sourceFile}:${ap.line} / ${ap.excerpt}`;
+  if (ap.fallback) return ap.fallback;
+  return "-";
+}
+
+function formatFileList(files) {
+  if (!files || !files.length) return "-";
+  return files.map((f) => f.fileName).join(", ");
+}
+
+async function presentSummary(analysis, outputDir, txtPath, jsonPath) {
+  const lines = [];
+  lines.push("保存先:");
+  lines.push(outputDir);
+  lines.push("");
+  lines.push(`抽出参照: ${analysis.extractedReferenceCount}`);
+  lines.push(`ユニーク: ${analysis.uniqueResourceCount}`);
+  lines.push(`重複: ${analysis.duplicateGroups.length}`);
+  lines.push(`欠番: ${analysis.missingNumbers.length}`);
+  if (analysis.warnings.length) lines.push(`注意: ${analysis.warnings.length}件`);
+  lines.push("");
+  lines.push("レポート:");
+  lines.push(txtPath);
+  lines.push(jsonPath);
+
+  const alert = new Alert();
+  alert.title = "リソースくん";
+  alert.message = lines.join("\n");
+  alert.addAction("OK");
+  alert.addAction("TXTを見る");
+  alert.addAction("JSONを見る");
+  const choice = await alert.presentAlert();
+
+  if (choice === 1) {
+    await QuickLook.present(txtPath, false);
+  } else if (choice === 2) {
+    await QuickLook.present(jsonPath, false);
+  }
+}
+
+async function showMessage(title, message) {
+  const alert = new Alert();
+  alert.title = title;
+  alert.message = message;
+  alert.addAction("OK");
+  await alert.presentAlert();
+}
+
+function looksLikeResourceValue(value, kind) {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  if (kind === "bgm" && v === "stop") return false;
+  if (/^\$\{.*\}$/.test(v)) return false;
+  if (kind === "fileLiteral") return looksLikeGenericFileLink(v);
+  return true;
+}
+
+function looksLikeGenericFileLink(value) {
+  return /\.(js|json|png|jpg|jpeg|webp|psd|gif|bmp|heic|mp3|wav|m4a|ogg|aac|caf|mp4|mov|webm)$/i.test(String(value || "").trim());
+}
+
+function cleanupQuotedValue(value) {
+  return String(value || "").trim();
+}
+
+function compareAppearance(a, b) {
+  const aPath = String(a.sourcePath || "");
+  const bPath = String(b.sourcePath || "");
+  const pathCmp = compareByPath(aPath, bPath);
+  if (pathCmp !== 0) return pathCmp;
+  return (a.line || 0) - (b.line || 0);
+}
+
+function compareReference(a, b) {
+  const aPath = String(a.sourcePath || "");
+  const bPath = String(b.sourcePath || "");
+  const pathCmp = compareByPath(aPath, bPath);
+  if (pathCmp !== 0) return pathCmp;
+  return (a.line || 0) - (b.line || 0);
+}
+
+function compareResourceRecord(a, b) {
+  const aLine = a.firstAppearance && a.firstAppearance.line > 0 ? a.firstAppearance.line : Number.MAX_SAFE_INTEGER;
+  const bLine = b.firstAppearance && b.firstAppearance.line > 0 ? b.firstAppearance.line : Number.MAX_SAFE_INTEGER;
+
+  const aFile = a.firstAppearance && a.firstAppearance.sourcePath ? a.firstAppearance.sourcePath : "~";
+  const bFile = b.firstAppearance && b.firstAppearance.sourcePath ? b.firstAppearance.sourcePath : "~";
+  const pathCmp = compareByPath(aFile, bFile);
+  if (pathCmp !== 0) return pathCmp;
+  if (aLine !== bLine) return aLine - bLine;
+  return compareByPath(a.resourceId, b.resourceId);
+}
+
+function minifyFileInfo(info) {
+  return {
+    fileName: info.fileName,
+    baseName: info.baseName,
+    ext: info.ext,
+    folder: info.folder,
+    path: info.path,
+    modifiedAt: info.modifiedAt
+  };
+}
+
+function pushUniqueFile(list, info) {
+  if (!list.some((x) => x.path === info.path)) list.push(info);
+}
+
+function buildDedupeKey(value, kind) {
+  let text = String(value || "").trim();
+  if (!text) return "";
+
+  if (kind !== "nextFile" && kind !== "fileLiteral") {
+    text = text.replace(/\.[a-z0-9]+$/i, "");
+  }
+
+  return normalizeKey(text);
+}
+
+function normalizePossibleFileURL(value) {
+  if (typeof value !== "string") return String(value || "");
+  if (!/^file:\/\//i.test(value)) return value;
+  let path = value.replace(/^file:\/\//i, "").replace(/^localhost/i, "");
+  try { path = decodeURIComponent(path); } catch (_) {}
+  return path;
+}
+
+function normalizeKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[！-～]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, " ")
+    .replace(/[\s_\-]+/g, "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, "");
+}
+
+function extractSequence(value) {
+  const base = String(value || "").replace(/\.[a-z0-9]+$/i, "");
+  const m = base.match(/^(.*?)(\d{2,})$/);
+  if (!m) return { group: "", number: null };
+  return { group: normalizeKey(m[1]), number: parseInt(m[2], 10) };
+}
+
+function cleanupExcerpt(line) {
+  return String(line || "").replace(/[ \t]+/g, " ").trim().slice(0, 120);
+}
+
+function safeFileSizeKB(fm, path) {
+  try { return fm.fileSize(path); } catch (_) { return null; }
+}
+
+function safeModifiedDate(fm, path) {
+  try { return fm.modificationDate(path); } catch (_) { return null; }
+}
+
+async function safeDownloadIfNeeded(fm, path) {
+  if (!fm.fileExists(path)) return;
+  try {
+    await fm.downloadFileFromiCloud(path);
+  } catch (_) {}
+}
+
+function readTextRobustly(fm, path) {
+  try {
+    const text = fm.readString(path);
+    if (text != null) return stripBom(text);
+  } catch (_) {}
+
+  const data = fm.read(path);
+  if (!data) throw new Error("ファイルを読み込めませんでした。");
+
+  const bytes = data.getBytes();
+  if (!bytes || !bytes.length) return "";
+
+  return decodeBytes(bytes);
+}
+
+function decodeBytes(bytes) {
+  if (hasPrefix(bytes, [0xef, 0xbb, 0xbf])) return decodeUtf8(bytes.slice(3));
+  if (hasPrefix(bytes, [0xff, 0xfe])) return decodeUtf16LE(bytes.slice(2));
+  if (hasPrefix(bytes, [0xfe, 0xff])) return decodeUtf16BE(bytes.slice(2));
+
+  try {
+    const text = Data.fromBytes(bytes).toRawString();
+    if (text != null) return stripBom(text);
+  } catch (_) {}
+
+  return decodeUtf8(bytes);
+}
+
+function decodeUtf8(bytes) {
+  let result = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const b1 = bytes[i];
+
+    if (b1 < 0x80) {
+      result += String.fromCharCode(b1);
+      continue;
+    }
+
+    if ((b1 & 0xe0) === 0xc0) {
+      const b2 = bytes[++i];
+      if (b2 == null) { result += "�"; break; }
+      const cp = ((b1 & 0x1f) << 6) | (b2 & 0x3f);
+      result += String.fromCharCode(cp);
+      continue;
+    }
+
+    if ((b1 & 0xf0) === 0xe0) {
+      const b2 = bytes[++i];
+      const b3 = bytes[++i];
+      if (b2 == null || b3 == null) { result += "�"; break; }
+      const cp = ((b1 & 0x0f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f);
+      result += String.fromCharCode(cp);
+      continue;
+    }
+
+    if ((b1 & 0xf8) === 0xf0) {
+      const b2 = bytes[++i];
+      const b3 = bytes[++i];
+      const b4 = bytes[++i];
+      if (b2 == null || b3 == null || b4 == null) { result += "�"; break; }
+      let cp = ((b1 & 0x07) << 18) | ((b2 & 0x3f) << 12) | ((b3 & 0x3f) << 6) | (b4 & 0x3f);
+      cp -= 0x10000;
+      result += String.fromCharCode(0xd800 + (cp >> 10));
+      result += String.fromCharCode(0xdc00 + (cp & 0x3ff));
+      continue;
+    }
+
+    result += "�";
+  }
+  return stripBom(result);
+}
+
+function decodeUtf16LE(bytes) {
+  let result = "";
+  for (let i = 0; i < bytes.length; i += 2) {
+    const lo = bytes[i];
+    const hi = bytes[i + 1];
+    if (hi == null) break;
+    result += String.fromCharCode((hi << 8) | lo);
+  }
+  return stripBom(result);
+}
+
+function decodeUtf16BE(bytes) {
+  let result = "";
+  for (let i = 0; i < bytes.length; i += 2) {
+    const hi = bytes[i];
+    const lo = bytes[i + 1];
+    if (lo == null) break;
+    result += String.fromCharCode((hi << 8) | lo);
+  }
+  return stripBom(result);
+}
+
+function uniqueStrings(list) {
+  const seen = {};
+  const out = [];
+  for (const item of list) {
+    const key = String(item);
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(item);
+  }
+  return out;
+}
+
+function uniqueNumbers(list) {
+  const seen = {};
+  const out = [];
+  for (const item of list) {
+    const key = String(item);
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(item);
+  }
+  return out;
+}
+
+function countChar(text, ch) {
+  let n = 0;
+  for (let i = 0; i < String(text || "").length; i++) {
+    if (text[i] === ch) n++;
+  }
+  return n;
+}
+
+function hasPrefix(bytes, prefix) {
+  if (bytes.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (bytes[i] !== prefix[i]) return false;
+  }
+  return true;
+}
+
+function stripBom(text) {
+  return String(text || "").replace(/^\uFEFF/, "");
+}
+
+function compareByPath(a, b) {
+  return String(a).localeCompare(String(b), "ja");
+}
+
+function formatDate(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function formatDateCompact(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function getExtension(path) {
+  const file = getFileName(path);
+  const dot = file.lastIndexOf(".");
+  if (dot < 0) return "";
+  return file.slice(dot + 1).toLowerCase();
+}
+
+function getFileName(path) {
+  const parts = String(path).split("/");
+  return parts[parts.length - 1] || path;
+}
+
+function getBaseName(path) {
+  const name = getFileName(path);
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? name : name.slice(0, dot);
+}
+
+function parentFolderName(path) {
+  const parts = String(path).split("/").filter(Boolean);
+  if (parts.length < 2) return "";
+  return parts[parts.length - 2];
+}
+
+
+const results=document.getElementById("result"),go=document.getElementById("run");
+go.addEventListener("click",async()=>{
+ const files=[...document.getElementById("files").files,...document.getElementById("folder").files];
+ if(!files.length){results.textContent="ファイルかフォルダを選択してください";return;}
+ go.disabled=true;results.replaceChildren();
+ try{
+ const objects=Object.create(null),paths=[],texts=Object.create(null);
+ for(let i=0;i<files.length;i++){
+ const file=files[i],path=file.webkitRelativePath||file.name;
+ let unique=path;let k=2;while(objects[unique])unique=path+"__"+k++;
+ objects[unique]=file;paths.push(unique);
+ if(CONFIG.textExtensions.includes(file.name.split(".").pop().toLowerCase())){
+  if(file.size<=CONFIG.maxScanFileSizeKB*1024)texts[unique]=await file.text();
+ }
+ }
+ const fm={fileSize:path=>(objects[path].size/1024),modificationDate:path=>new Date(objects[path].lastModified),readString:path=>{
+ if(!(path in texts))throw Error("対象の文字列ファイルを読み込めません");
+ return texts[path];
+ }};
+ const analysis=analyzeResources(fm,paths,[]);
+ const heading=document.createElement("p");
+ heading.textContent="走査 "+analysis.scannedFileCount+" ファイル / 参照 "+analysis.extractedReferenceCount+" 件 / 資産 "+analysis.uniqueResourceCount+" 件";
+ results.append(heading);
+ const summary=buildTextReport(analysis);
+ PWAUtils.saveLink(results,"resource_report.txt",summary,"text/plain");
+ PWAUtils.saveLink(results,"resource_report.json",JSON.stringify(analysis,null,2),"application/json");
+ const pre=document.createElement("pre");pre.textContent=summary;results.append(pre);
+ }catch(err){results.textContent="解析に失敗しました: "+String(err);}
+ finally{go.disabled=false;}
+});
+</script><script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});</script></body></html>
