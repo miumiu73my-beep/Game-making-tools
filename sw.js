@@ -1,4 +1,4 @@
-const CACHE='game-making-tools-pwa-v2';
+const CACHE='game-making-tools-pwa-v3';
 const ASSETS=[
   "./",
   "./index.html",

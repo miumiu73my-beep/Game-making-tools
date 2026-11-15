@@ -664,7 +664,7 @@ window.run = async function(inputB64, cfg) {
   }
 }
 </script>
-<script>async function fileToPngBase64(file){
+<script src="./browser-utils.js"></script><script>async function fileToPngBase64(file){
  const u=URL.createObjectURL(file);
  try{
  const img=new Image();await new Promise((ok,ng)=>{img.onload=ok;img.onerror=()=>ng(Error("画像を開けません"));img.src=u;});
@@ -677,7 +677,7 @@ document.getElementById("convert").addEventListener("click",async()=>{
  const files=[...document.getElementById("files").files],status=document.getElementById("status"),out=document.getElementById("output");
  if(!files.length){status.textContent="画像を選択してください";return;}
  out.replaceChildren();
- const btn=document.getElementById("convert");btn.disabled=true;
+ const btn=document.getElementById("convert");btn.disabled=true;const savedFiles=[];
  const size=document.getElementById("canvasSize").value.split("x").map(Number);
  const cfg={outputMode:document.getElementById("mode").value,canvasW:size[0],canvasH:size[1],targetWidth:Number(document.getElementById("width").value),sampleMode:document.getElementById("sample").value,faceProtect:document.getElementById("face").value,gamma:.94,lineStrength:.86,highlightStrength:.56};
  try{
@@ -689,10 +689,10 @@ document.getElementById("convert").addEventListener("click",async()=>{
    const info=document.createElement("p");info.textContent=file.name+" — "+res.info.outW+"×"+res.info.outH;block.append(info);
    const img=document.createElement("img");img.className="preview";img.alt="変換結果";img.src="data:image/png;base64,"+res.finalB64;block.append(img,document.createElement("div"));
    const name=file.name.replace(/\.[^.]*$/,"")+"_pixel.png";
-   const a=document.createElement("a");a.textContent="PNGを保存: "+name;a.className="download";a.download=name;a.href=img.src;block.append(a);out.append(block);
+   const bytes=PWAUtils.bytesFromBase64(res.finalB64);savedFiles.push({name,data:bytes});PWAUtils.saveLink(block,name,new Blob([bytes],{type:"image/png"}),"image/png");out.append(block);
   }catch(e){const p=document.createElement("p");p.textContent=file.name+": "+String(e);out.append(p);}
  }
- status.textContent="処理が終了しました。各PNGの「保存」をタップしてください。";
+ if(savedFiles.length)PWAUtils.saveLink(out,"立ち絵ドット変換.zip",PWAUtils.zip(savedFiles),"application/zip");status.textContent="処理が終了しました。各PNGまたはまとめZIPを保存してください。";
  }finally{btn.disabled=false;}
 });</script><script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});</script></body>
 </html>
