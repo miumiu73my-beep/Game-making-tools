@@ -1,0 +1,2139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>グリッドペイント</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --line: #334155;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #fb7185;
+      --ok: #22c55e;
+      --shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      overflow-x: hidden;
+    }
+
+    body {
+      min-height: 100vh;
+      padding: 14px;
+      padding-bottom: calc(18px + env(safe-area-inset-bottom));
+    }
+
+    .app {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      min-height: 0;
+    }
+
+    .panel {
+      min-width: 0;
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(255,255,255,0.02);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .panel-body { padding: 12px; }
+
+    .stack { display: grid; gap: 10px; min-width: 0; }
+    .row { display: grid; gap: 10px; min-width: 0; }
+    .row.two { grid-template-columns: 1fr 1fr; }
+    .row.three { grid-template-columns: repeat(3, 1fr); }
+
+    label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, textarea, button, select {
+      font: inherit;
+      color: var(--text);
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 12px;
+      min-height: 42px;
+    }
+
+    input[type="color"] {
+      padding: 4px;
+      min-height: 42px;
+      width: 100%;
+      background: #0b1220;
+    }
+
+    textarea {
+      width: 100%;
+      max-width: 100%;
+      min-height: 180px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    button {
+      background: #132136;
+      cursor: pointer;
+      touch-action: manipulation;
+      font-weight: 650;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:hover { filter: brightness(1.08); }
+    button.primary { background: linear-gradient(180deg, #0ea5e9, #0284c7); border-color: transparent; }
+    button.good { background: linear-gradient(180deg, #16a34a, #15803d); border-color: transparent; }
+    button.warn { background: linear-gradient(180deg, #e11d48, #be123c); border-color: transparent; }
+    button.ghost { background: transparent; }
+    button.active {
+      outline: 2px solid rgba(56, 189, 248, 0.85);
+      outline-offset: 1px;
+    }
+
+    .toolbar-spacer {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .zoom-buttons {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .zoom-buttons button {
+      min-width: 46px;
+      padding-inline: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.10);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: #dbeafe;
+      font-size: 12px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .palette-bulk-box {
+      min-height: 110px;
+    }
+
+    .palette-card {
+      display: grid;
+      grid-template-columns: 26px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 12px;
+      background: #0b1220;
+      border: 1px solid #243244;
+    }
+
+    .swatch {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background-image:
+        linear-gradient(45deg, rgba(255,255,255,0.08) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.08) 75%),
+        linear-gradient(45deg, rgba(255,255,255,0.08) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.08) 75%);
+      background-position: 0 0, 8px 8px;
+      background-size: 16px 16px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .swatch::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--swatch-color, transparent);
+    }
+
+    .palette-meta { min-width: 0; }
+    .palette-no { font-weight: 800; }
+    .palette-code {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mini-btn {
+      min-height: 30px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .work-area {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(255,255,255,0.02);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .canvas-shell {
+      padding: 12px;
+      overflow: auto;
+      min-width: 0;
+      min-height: 240px;
+      max-width: 100%;
+      max-height: min(72dvh, 900px);
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: none;
+      background:
+        radial-gradient(circle at top, rgba(56, 189, 248, 0.09), transparent 32%),
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+    }
+
+    .zoom-space {
+      position: relative;
+      min-width: 100%;
+      min-height: 100%;
+      transform-origin: top left;
+    }
+
+    .canvas-stage {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: inline-grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      overflow: hidden;
+      touch-action: none;
+      transform-origin: top left;
+      will-change: transform;
+    }
+
+    .corner {
+      width: 42px;
+      height: 28px;
+      border-right: 1px solid #334155;
+      border-bottom: 1px solid #334155;
+      background: #0f172a;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .ruler-top-wrap {
+      overflow: hidden;
+      border-bottom: 1px solid #334155;
+      background: #0f172a;
+    }
+
+    .ruler-left-wrap {
+      overflow: hidden;
+      border-right: 1px solid #334155;
+      background: #0f172a;
+    }
+
+    #rulerTop { display: block; height: 28px; }
+    #rulerLeft { display: block; width: 42px; }
+    #gridCanvas {
+      display: block;
+      background-image:
+        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%),
+        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%);
+      background-position: 0 0, 10px 10px;
+      background-size: 20px 20px;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    .status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .examples {
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      padding: 10px;
+      background: #0b1220;
+      border: 1px solid #243244;
+      border-radius: 10px;
+      line-height: 1.5;
+      color: #cbd5e1;
+    }
+
+    .footer-note {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .selection-tools {
+      display: grid;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(255,255,255,0.015);
+    }
+
+    .selection-tools-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .selection-tools-main {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .selection-mode-group {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .selection-mode-group button {
+      min-height: 36px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+
+    .arrow-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 46px);
+      grid-template-rows: repeat(3, 46px);
+      gap: 6px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .arrow-pad button {
+      min-height: 46px;
+      min-width: 46px;
+      padding: 0;
+      border-radius: 12px;
+      font-size: 22px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+    }
+
+    .arrow-pad-spacer {
+      width: 46px;
+      height: 46px;
+    }
+
+    .notice-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.08);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      color: #cbd5e1;
+      min-height: 30px;
+    }
+
+    @media (max-width: 960px) {
+      .app { grid-template-columns: 1fr; }
+      .row.three { grid-template-columns: 1fr 1fr; }
+      .work-area { grid-template-rows: auto minmax(0, 1fr) auto; }
+      .canvas-shell { max-height: 62dvh; }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 10px; }
+      .row.two, .row.three { grid-template-columns: 1fr; }
+      .toolbar { position: static; }
+      .canvas-shell { padding: 8px; max-height: 56dvh; min-height: 220px; }
+      .corner { width: 36px; }
+      #rulerLeft { width: 36px; }
+      .selection-tools-main { align-items: stretch; }
+      .arrow-pad { grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(3, 42px); }
+      .arrow-pad button, .arrow-pad-spacer { min-width: 42px; width: 42px; min-height: 42px; height: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-header">1. キャンバス作成</div>
+        <div class="panel-body stack">
+          <div class="row three">
+            <label>横マス数
+              <input id="colsInput" type="number" min="1" max="300" value="16" />
+            </label>
+            <label>縦マス数
+              <input id="rowsInput" type="number" min="1" max="300" value="16" />
+            </label>
+            <label>表示サイズ(px)
+              <input id="cellSizeInput" type="number" min="8" max="60" value="24" />
+            </label>
+          </div>
+          <div class="row two">
+            <label>書き出し倍率(px/1マス)
+              <input id="exportScaleInput" type="number" min="1" max="200" value="32" />
+            </label>
+            <label>ファイル名
+              <input id="fileNameInput" type="text" value="grid-art" />
+            </label>
+          </div>
+          <div class="row two">
+            <button type="button" id="createCanvasBtn" class="primary">キャンバスを作る / 作り直す</button>
+            <button type="button" id="clearCanvasBtn" class="warn">塗った内容を全部クリア</button>
+          </div>
+          <div class="hint">X と Y はどちらも 1 始まりです。キャンバス再作成で現在の内容は消えます。</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">2. 色番号</div>
+        <div class="panel-body stack">
+          <div class="row three">
+            <label>番号
+              <input id="paletteNumberInput" type="number" min="1" step="1" value="1" />
+            </label>
+            <label>色コード
+              <input id="paletteColorInput" type="text" value="#040F" />
+            </label>
+            <label>カラーピッカー
+              <input id="paletteColorPicker" type="color" value="#004400" />
+            </label>
+          </div>
+          <div class="row two">
+            <button type="button" id="savePaletteBtn" class="good">番号に色を登録 / 更新</button>
+            <button type="button" id="setActiveFromFormBtn" class="ghost">この色を現在色にする</button>
+          </div>
+          <label>色番号をまとめて登録
+            <textarea id="paletteBulkInput" class="palette-bulk-box" spellcheck="false">1 = #040F
+2 = #FF0000
+3 -> #00CCFF</textarea>
+          </label>
+          <div class="row two">
+            <button type="button" id="savePaletteBulkBtn" class="good">色番号をまとめて登録</button>
+            <button type="button" id="clearPaletteBulkBtn" class="ghost">まとめ入力欄を消す</button>
+          </div>
+          <div class="hint">例: <code>1=#040F</code> / <code>2:#FF0000</code> / <code>3 -&gt; #00CCFF</code> / <code>4 #112233</code></div>
+          <div>
+            <span class="pill" id="activeColorPill">現在色: なし</span>
+          </div>
+          <div id="paletteList" class="palette-grid"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">3. 命令入力</div>
+        <div class="panel-body stack">
+          <textarea id="commandInput" spellcheck="false">1 = #040F
+2 = #FF0000
+X=2, Y=3〜5, 1
+X=4-6, Y=2, #00CCFF</textarea>
+          <div class="row two">
+            <button type="button" id="runCommandsBtn" class="primary">複数行まとめて実行</button>
+            <button type="button" id="clearCommandsBtn" class="ghost">入力欄を消す</button>
+          </div>
+          <div class="hint">書き方の揺れはある程度吸収します。全角数字・全角記号もだいたい対応します。消す命令やクリア命令も使えます。反転は選択範囲にだけかかります。</div>
+          <div class="examples">例:
+1 = #040F
+2 -> #FF0000
+X=2, Y=5〜3 を #040F で塗る
+x=4-6 y=2 2
+X=2, Y=3-5 を消す
+erase x=7-9 y=1
+copy x=2-4 y=3-6
+paste x=8 y=3
+左右反転
+上下反転
+選択解除
+clear</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">4. 保存とメモ</div>
+        <div class="panel-body stack">
+          <div class="footer-note">PNG は透過で保存します。PSD は 1 レイヤー相当のフラット書き出しです。<br>「PNG+PSDまとめて保存」は、対応端末では 2 つのファイルを同じ名前でまとめて共有できます。<br>対応端末では保存先選択を試し、非対応環境では共有シートまたは通常ダウンロードに切り替えます。<br>下のキャンバスは 2 本指のピンチイン / ピンチアウト、または倍率ボタンで拡大縮小できます。</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel work-area" id="workArea">
+      <div class="toolbar">
+        <button type="button" id="modePaintBtn" class="active">塗るモード</button>
+        <button type="button" id="modeEraseBtn">消しゴムモード</button>
+        <button type="button" id="modeSelectBtn">範囲選択モード</button>
+        <button type="button" id="copySelectionBtn">選択範囲をコピー</button>
+        <button type="button" id="pasteModeBtn">貼り付け位置を選ぶ</button>
+        <button type="button" id="flipHBtn">左右反転</button>
+        <button type="button" id="flipVBtn">上下反転</button>
+        <button type="button" id="toolbarClearBtn" class="warn">全部クリア</button>
+        <div class="toolbar-spacer"></div>
+        <div class="zoom-buttons">
+          <button id="zoomOutBtn" type="button">−</button>
+          <button id="zoomResetBtn" type="button">100%</button>
+          <button id="zoomInBtn" type="button">＋</button>
+        </div>
+        <button type="button" id="savePngBtn" class="good">PNG保存</button>
+        <button type="button" id="savePsdBtn" class="good">PSD保存</button>
+        <button type="button" id="saveBothBtn" class="good">PNG+PSDまとめて保存</button>
+      </div>
+
+      <div class="selection-tools">
+        <div class="selection-tools-header">
+          <span class="hint">選択範囲は矢印で1マスずつ微調整できます。貼り付け位置を選ぶ中は、紫の枠を矢印で動かせます。</span>
+          <button id="clearSelectionBtn">範囲選択を解除</button>
+        </div>
+        <div class="selection-tools-main">
+          <div class="selection-mode-group">
+            <button id="selectionExpandModeBtn" class="active">広げる</button>
+            <button id="selectionShrinkModeBtn">縮める</button>
+            <button id="applyPasteBtn" class="good">この位置に貼り付け</button>
+          </div>
+          <div class="arrow-pad" aria-label="選択微調整または貼り付け位置移動">
+            <div class="arrow-pad-spacer"></div>
+            <button id="adjustUpBtn" aria-label="上">↑</button>
+            <div class="arrow-pad-spacer"></div>
+            <button id="adjustLeftBtn" aria-label="左">←</button>
+            <div class="arrow-pad-spacer"></div>
+            <button id="adjustRightBtn" aria-label="右">→</button>
+            <div class="arrow-pad-spacer"></div>
+            <button id="adjustDownBtn" aria-label="下">↓</button>
+            <div class="arrow-pad-spacer"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="canvas-shell" id="canvasShell">
+        <div class="zoom-space" id="zoomSpace">
+          <div class="canvas-stage" id="canvasStage">
+            <div class="corner">XY</div>
+            <div class="ruler-top-wrap"><canvas id="rulerTop"></canvas></div>
+            <div class="ruler-left-wrap"><canvas id="rulerLeft"></canvas></div>
+            <canvas id="gridCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="status">
+        <span id="modeStatus">モード: 塗る</span>
+        <span id="coordStatus">座標: -</span>
+        <span id="selectionStatus">選択: なし</span>
+        <span id="clipboardStatus">コピー: なし</span>
+        <span id="zoomStatus">表示倍率: 100%</span>
+        <span id="noticeStatus" class="notice-pill">準備OK</span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const els = {
+        colsInput: $('colsInput'),
+        rowsInput: $('rowsInput'),
+        cellSizeInput: $('cellSizeInput'),
+        exportScaleInput: $('exportScaleInput'),
+        fileNameInput: $('fileNameInput'),
+        createCanvasBtn: $('createCanvasBtn'),
+        clearCanvasBtn: $('clearCanvasBtn'),
+        paletteNumberInput: $('paletteNumberInput'),
+        paletteColorInput: $('paletteColorInput'),
+        paletteColorPicker: $('paletteColorPicker'),
+        savePaletteBtn: $('savePaletteBtn'),
+        setActiveFromFormBtn: $('setActiveFromFormBtn'),
+        paletteBulkInput: $('paletteBulkInput'),
+        savePaletteBulkBtn: $('savePaletteBulkBtn'),
+        clearPaletteBulkBtn: $('clearPaletteBulkBtn'),
+        activeColorPill: $('activeColorPill'),
+        paletteList: $('paletteList'),
+        commandInput: $('commandInput'),
+        runCommandsBtn: $('runCommandsBtn'),
+        clearCommandsBtn: $('clearCommandsBtn'),
+        modePaintBtn: $('modePaintBtn'),
+        modeEraseBtn: $('modeEraseBtn'),
+        modeSelectBtn: $('modeSelectBtn'),
+        copySelectionBtn: $('copySelectionBtn'),
+        pasteModeBtn: $('pasteModeBtn'),
+        clearSelectionBtn: $('clearSelectionBtn'),
+        selectionExpandModeBtn: $('selectionExpandModeBtn'),
+        selectionShrinkModeBtn: $('selectionShrinkModeBtn'),
+        adjustUpBtn: $('adjustUpBtn'),
+        adjustLeftBtn: $('adjustLeftBtn'),
+        adjustRightBtn: $('adjustRightBtn'),
+        adjustDownBtn: $('adjustDownBtn'),
+        applyPasteBtn: $('applyPasteBtn'),
+        flipHBtn: $('flipHBtn'),
+        flipVBtn: $('flipVBtn'),
+        toolbarClearBtn: $('toolbarClearBtn'),
+        zoomOutBtn: $('zoomOutBtn'),
+        zoomResetBtn: $('zoomResetBtn'),
+        zoomInBtn: $('zoomInBtn'),
+        savePngBtn: $('savePngBtn'),
+        savePsdBtn: $('savePsdBtn'),
+        saveBothBtn: $('saveBothBtn'),
+        gridCanvas: $('gridCanvas'),
+        rulerTop: $('rulerTop'),
+        rulerLeft: $('rulerLeft'),
+        modeStatus: $('modeStatus'),
+        coordStatus: $('coordStatus'),
+        selectionStatus: $('selectionStatus'),
+        clipboardStatus: $('clipboardStatus'),
+        workArea: $('workArea'),
+        canvasShell: $('canvasShell'),
+        zoomSpace: $('zoomSpace'),
+        canvasStage: $('canvasStage'),
+        zoomStatus: $('zoomStatus'),
+        noticeStatus: $('noticeStatus'),
+      };
+
+      const state = {
+        cols: 16,
+        rows: 16,
+        displayCellSize: 24,
+        exportScale: 32,
+        grid: [],
+        palette: new Map(),
+        activeColor: null,
+        activePaletteNumber: null,
+        mode: 'paint',
+        selection: null,
+        selectStart: null,
+        dragging: false,
+        copied: null,
+        pasteMode: false,
+        pastePreview: null,
+        selectionAdjustMode: 'expand',
+        lastTouchCell: null,
+        lastNoticeTimer: null,
+        zoom: 1,
+        minZoom: 0.35,
+        maxZoom: 8,
+        isPinching: false,
+        pinch: null,
+        selectButtonHighlight: false,
+      };
+
+      const ctx = els.gridCanvas.getContext('2d', { alpha: true });
+      const topCtx = els.rulerTop.getContext('2d');
+      const leftCtx = els.rulerLeft.getContext('2d');
+      const colorProbeCanvas = document.createElement('canvas');
+      colorProbeCanvas.width = 1;
+      colorProbeCanvas.height = 1;
+      const colorProbeCtx = colorProbeCanvas.getContext('2d', { willReadFrequently: true });
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function toHalfWidth(str) {
+        return str.replace(/[！-～]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+      }
+
+      function normalizeCommand(raw) {
+        return toHalfWidth(String(raw || ''))
+          .replace(/[‐‑‒–—ー－]/g, '-')
+          .replace(/[〜～]/g, '~')
+          .replace(/[，、]/g, ',')
+          .replace(/[：]/g, ':')
+          .replace(/[＝]/g, '=')
+          .replace(/[→]/g, '->')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function createEmptyGrid(cols, rows) {
+        return Array.from({ length: rows }, () => Array.from({ length: cols }, () => null));
+      }
+
+      function applyPaletteDefaults() {
+        if (!state.palette.size) {
+          state.palette.set(1, '#040F');
+          state.palette.set(2, '#FF0000');
+        }
+        if (!state.activeColor) {
+          state.activePaletteNumber = 1;
+          state.activeColor = state.palette.get(1) || '#040F';
+        }
+      }
+
+      function formatColorForDisplay(color) {
+        return color || 'なし';
+      }
+
+      function updateActiveColorPill() {
+        const text = state.activePaletteNumber
+          ? `現在色: ${state.activePaletteNumber} → ${formatColorForDisplay(state.activeColor)}`
+          : `現在色: ${formatColorForDisplay(state.activeColor)}`;
+        els.activeColorPill.textContent = text;
+      }
+
+
+      function setNotice(message, tone = 'info') {
+        if (!els.noticeStatus) return;
+        if (state.lastNoticeTimer) {
+          clearTimeout(state.lastNoticeTimer);
+          state.lastNoticeTimer = null;
+        }
+        const label = String(message || '').trim() || '準備OK';
+        els.noticeStatus.textContent = label;
+        let bg = 'rgba(148, 163, 184, 0.08)';
+        let border = 'rgba(148, 163, 184, 0.18)';
+        let color = '#cbd5e1';
+        if (tone === 'error') {
+          bg = 'rgba(244, 63, 94, 0.12)';
+          border = 'rgba(244, 63, 94, 0.28)';
+          color = '#fecdd3';
+        } else if (tone === 'success') {
+          bg = 'rgba(34, 197, 94, 0.12)';
+          border = 'rgba(34, 197, 94, 0.26)';
+          color = '#dcfce7';
+        } else if (tone === 'accent') {
+          bg = 'rgba(56, 189, 248, 0.12)';
+          border = 'rgba(56, 189, 248, 0.26)';
+          color = '#dbeafe';
+        }
+        els.noticeStatus.style.background = bg;
+        els.noticeStatus.style.borderColor = border;
+        els.noticeStatus.style.color = color;
+        if (tone !== 'error') {
+          state.lastNoticeTimer = setTimeout(() => {
+            if (els.noticeStatus.textContent === label) {
+              els.noticeStatus.textContent = '準備OK';
+              els.noticeStatus.style.background = 'rgba(148, 163, 184, 0.08)';
+              els.noticeStatus.style.borderColor = 'rgba(148, 163, 184, 0.18)';
+              els.noticeStatus.style.color = '#cbd5e1';
+            }
+          }, 2600);
+        }
+      }
+
+      function refreshModeButtons() {
+        if (els.modePaintBtn) els.modePaintBtn.classList.toggle('active', state.mode === 'paint');
+        if (els.modeEraseBtn) els.modeEraseBtn.classList.toggle('active', state.mode === 'erase');
+        if (els.modeSelectBtn) els.modeSelectBtn.classList.toggle('active', state.mode === 'select' && state.selectButtonHighlight);
+      }
+
+      function deactivateSelectionButtonHighlight() {
+        if (state.mode !== 'select' || !state.selectButtonHighlight) return;
+        state.selectButtonHighlight = false;
+        refreshModeButtons();
+      }
+
+      function updateSelectionAdjustButtons() {
+        if (els.selectionExpandModeBtn) els.selectionExpandModeBtn.classList.toggle('active', state.selectionAdjustMode === 'expand');
+        if (els.selectionShrinkModeBtn) els.selectionShrinkModeBtn.classList.toggle('active', state.selectionAdjustMode === 'shrink');
+        if (els.applyPasteBtn) {
+          const ready = !!(state.pasteMode && state.pastePreview && state.copied);
+          els.applyPasteBtn.disabled = !ready;
+          els.applyPasteBtn.style.opacity = ready ? '1' : '0.55';
+        }
+        if (els.pasteModeBtn) {
+          if (!state.copied) {
+            els.pasteModeBtn.textContent = '貼り付け位置を選ぶ';
+          } else if (state.pasteMode) {
+            els.pasteModeBtn.textContent = '貼り付け位置選択中';
+          } else {
+            els.pasteModeBtn.textContent = '貼り付け位置を選ぶ';
+          }
+        }
+      }
+
+      function isValidCssColor(value) {
+        if (!value) return false;
+        const probe = new Option().style;
+        probe.color = '';
+        probe.color = value;
+        return probe.color !== '';
+      }
+
+      function normalizeColor(value) {
+        if (!value) return null;
+        const input = normalizeCommand(value).replace(/\s+/g, '');
+        if (/^#[0-9a-f]{3,8}$/i.test(input)) return input.toUpperCase();
+        if (isValidCssColor(input)) return input;
+        return null;
+      }
+
+      function syncColorInputsFromText() {
+        const color = normalizeColor(els.paletteColorInput.value);
+        if (!color) return;
+        if (/^#[0-9A-F]{6}$/i.test(color)) {
+          els.paletteColorPicker.value = color;
+        } else if (/^#[0-9A-F]{3}$/i.test(color)) {
+          const full = '#' + color.slice(1).split('').map((c) => c + c).join('');
+          els.paletteColorPicker.value = full;
+        }
+      }
+
+
+      function gridHasAnyPaint() {
+        return state.grid.some((row) => row.some((cell) => cell !== null));
+      }
+
+      function getNormalizedSelection() {
+        if (!state.selection) return null;
+        return {
+          x1: Math.min(state.selection.x1, state.selection.x2),
+          x2: Math.max(state.selection.x1, state.selection.x2),
+          y1: Math.min(state.selection.y1, state.selection.y2),
+          y2: Math.max(state.selection.y1, state.selection.y2),
+        };
+      }
+
+      function clearSelection(options = {}) {
+        const keepPastePreview = !!options.keepPastePreview;
+        state.selection = null;
+        state.selectStart = null;
+        if (!keepPastePreview) {
+          state.pastePreview = state.pasteMode ? state.pastePreview : null;
+        }
+        drawMainGrid();
+        updateStatus();
+      }
+
+      function clearSelectionOverlay() {
+        state.selection = null;
+        state.selectStart = null;
+        drawMainGrid();
+        updateStatus();
+      }
+
+      function ensurePastePreview() {
+        if (!state.copied) return false;
+        if (!state.pastePreview) {
+          state.pastePreview = { x: 1, y: 1 };
+        }
+        return true;
+      }
+
+      function setPastePreview(x, y) {
+        if (!state.copied) return false;
+        const maxX = Math.max(1, state.cols - state.copied.width + 1);
+        const maxY = Math.max(1, state.rows - state.copied.height + 1);
+        state.pastePreview = {
+          x: clamp(x, 1, maxX),
+          y: clamp(y, 1, maxY),
+        };
+        drawMainGrid();
+        updateStatus();
+        return true;
+      }
+
+      function movePastePreview(direction, delta = 1) {
+        if (!ensurePastePreview()) return false;
+        const next = { ...state.pastePreview };
+        if (direction === 'left') next.x -= delta;
+        else if (direction === 'right') next.x += delta;
+        else if (direction === 'up') next.y -= delta;
+        else if (direction === 'down') next.y += delta;
+        else return false;
+        return setPastePreview(next.x, next.y);
+      }
+
+      function adjustSelectionFromArrow(direction) {
+        if (state.pasteMode && state.copied) {
+          return movePastePreview(direction, 1);
+        }
+        const sel = getNormalizedSelection();
+        if (!sel) return false;
+        const expand = state.selectionAdjustMode === 'expand';
+        if (direction === 'left') {
+          sel.x1 = clamp(sel.x1 + (expand ? -1 : 1), 1, sel.x2);
+        } else if (direction === 'right') {
+          sel.x2 = clamp(sel.x2 + (expand ? 1 : -1), sel.x1, state.cols);
+        } else if (direction === 'up') {
+          sel.y1 = clamp(sel.y1 + (expand ? -1 : 1), 1, sel.y2);
+        } else if (direction === 'down') {
+          sel.y2 = clamp(sel.y2 + (expand ? 1 : -1), sel.y1, state.rows);
+        } else {
+          return false;
+        }
+        state.selection = { ...sel };
+        drawMainGrid();
+        updateStatus();
+        return true;
+      }
+
+      function clearGridContent() {
+        state.grid = createEmptyGrid(state.cols, state.rows);
+        state.selection = null;
+        state.selectStart = null;
+        state.pasteMode = false;
+        state.pastePreview = null;
+        drawMainGrid();
+        updateStatus();
+        setNotice('キャンバスを全部クリアしました', 'success');
+      }
+
+      function confirmAndClearGrid() {
+        clearGridContent();
+        return true;
+      }
+
+      function extractPaletteEntries(text) {
+        const normalized = normalizeCommand(text)
+          .replace(/[;\/|]+/g, '\n')
+          .replace(/\s*,\s*(?=\d+\s*(?:=|:|->|=>|#[0-9a-f]|[a-z]))/gi, '\n');
+        const regex = /(\d+)\s*(?:=|:|->|=>|\s)\s*(#[0-9a-f]{3,8}|[a-z]+)/gi;
+        const entries = [];
+        let match;
+        while ((match = regex.exec(normalized))) {
+          const no = parseInt(match[1], 10);
+          const color = normalizeColor(match[2]);
+          if (no >= 1 && color) entries.push([no, color]);
+        }
+        return entries;
+      }
+
+      function applyPaletteEntries(entries) {
+        if (!entries.length) return false;
+        for (const [no, color] of entries) {
+          state.palette.set(no, color);
+          state.activePaletteNumber = no;
+          state.activeColor = color;
+        }
+        drawAll();
+        updateStatus();
+        return true;
+      }
+
+      function savePaletteBulk() {
+        const entries = extractPaletteEntries(els.paletteBulkInput.value);
+        if (!entries.length) {
+          setNotice('まとめ登録を解釈できませんでした。例: 1=#040F / 2:#FF0000 / 3 -> #00CCFF', 'error');
+          return;
+        }
+        applyPaletteEntries(entries);
+        setNotice(`${entries.length}件の色番号を登録しました`, 'success');
+      }
+
+      function setupCanvasFromInputs() {
+        const cols = clamp(parseInt(els.colsInput.value || '16', 10) || 16, 1, 300);
+        const rows = clamp(parseInt(els.rowsInput.value || '16', 10) || 16, 1, 300);
+        const displayCellSize = clamp(parseInt(els.cellSizeInput.value || '24', 10) || 24, 8, 60);
+        const exportScale = clamp(parseInt(els.exportScaleInput.value || '32', 10) || 32, 1, 200);
+
+        state.cols = cols;
+        state.rows = rows;
+        state.displayCellSize = displayCellSize;
+        state.exportScale = exportScale;
+        state.grid = createEmptyGrid(cols, rows);
+        state.selection = null;
+        state.selectStart = null;
+        state.copied = null;
+        state.pasteMode = false;
+        state.pastePreview = null;
+        state.selectionAdjustMode = 'expand';
+        state.zoom = 1;
+        state.isPinching = false;
+        state.pinch = null;
+        applyPaletteDefaults();
+        drawAll();
+        updateStatus();
+      }
+
+      function resizeCanvas(canvas, cssWidth, cssHeight) {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.round(cssWidth * dpr);
+        canvas.height = Math.round(cssHeight * dpr);
+        canvas.style.width = cssWidth + 'px';
+        canvas.style.height = cssHeight + 'px';
+        const localCtx = canvas.getContext('2d');
+        localCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return localCtx;
+      }
+
+      function drawAll() {
+        drawMainGrid();
+        drawRulers();
+        renderPalette();
+        updateActiveColorPill();
+        updateCanvasShellMaxHeight();
+        updateZoomLayout();
+      }
+
+      function drawMainGrid() {
+        const width = state.cols * state.displayCellSize;
+        const height = state.rows * state.displayCellSize;
+        const localCtx = resizeCanvas(els.gridCanvas, width, height);
+        localCtx.clearRect(0, 0, width, height);
+
+        for (let y = 0; y < state.rows; y++) {
+          for (let x = 0; x < state.cols; x++) {
+            const color = state.grid[y][x];
+            if (color) {
+              localCtx.fillStyle = color;
+              localCtx.fillRect(
+                x * state.displayCellSize,
+                y * state.displayCellSize,
+                state.displayCellSize,
+                state.displayCellSize
+              );
+            }
+          }
+        }
+
+        localCtx.beginPath();
+        localCtx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        localCtx.lineWidth = 1;
+        for (let x = 0; x <= state.cols; x++) {
+          const px = x * state.displayCellSize + 0.5;
+          localCtx.moveTo(px, 0);
+          localCtx.lineTo(px, height);
+        }
+        for (let y = 0; y <= state.rows; y++) {
+          const py = y * state.displayCellSize + 0.5;
+          localCtx.moveTo(0, py);
+          localCtx.lineTo(width, py);
+        }
+        localCtx.stroke();
+
+        const currentSelection = getNormalizedSelection();
+        if (currentSelection) {
+          const minX = currentSelection.x1 - 1;
+          const minY = currentSelection.y1 - 1;
+          const maxX = currentSelection.x2 - 1;
+          const maxY = currentSelection.y2 - 1;
+          localCtx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+          localCtx.fillRect(
+            minX * state.displayCellSize,
+            minY * state.displayCellSize,
+            (maxX - minX + 1) * state.displayCellSize,
+            (maxY - minY + 1) * state.displayCellSize
+          );
+          localCtx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+          localCtx.lineWidth = 2;
+          localCtx.strokeRect(
+            minX * state.displayCellSize + 1,
+            minY * state.displayCellSize + 1,
+            (maxX - minX + 1) * state.displayCellSize - 2,
+            (maxY - minY + 1) * state.displayCellSize - 2
+          );
+        }
+
+        if (state.pasteMode && state.copied && state.pastePreview) {
+          const previewX = state.pastePreview.x - 1;
+          const previewY = state.pastePreview.y - 1;
+          const previewW = Math.min(state.copied.width, state.cols - previewX);
+          const previewH = Math.min(state.copied.height, state.rows - previewY);
+          if (previewW > 0 && previewH > 0) {
+            localCtx.save();
+            localCtx.fillStyle = 'rgba(192, 132, 252, 0.18)';
+            localCtx.strokeStyle = 'rgba(216, 180, 254, 0.98)';
+            localCtx.lineWidth = 2;
+            localCtx.setLineDash([6, 4]);
+            localCtx.fillRect(
+              previewX * state.displayCellSize,
+              previewY * state.displayCellSize,
+              previewW * state.displayCellSize,
+              previewH * state.displayCellSize
+            );
+            localCtx.strokeRect(
+              previewX * state.displayCellSize + 1,
+              previewY * state.displayCellSize + 1,
+              previewW * state.displayCellSize - 2,
+              previewH * state.displayCellSize - 2
+            );
+            localCtx.restore();
+          }
+        }
+      }
+
+      function drawRulers() {
+        const topWidth = state.cols * state.displayCellSize;
+        const leftHeight = state.rows * state.displayCellSize;
+        const tCtx = resizeCanvas(els.rulerTop, topWidth, 28);
+        const lCtx = resizeCanvas(els.rulerLeft, 42, leftHeight);
+
+        tCtx.clearRect(0, 0, topWidth, 28);
+        lCtx.clearRect(0, 0, 42, leftHeight);
+
+        tCtx.fillStyle = '#0f172a';
+        tCtx.fillRect(0, 0, topWidth, 28);
+        lCtx.fillStyle = '#0f172a';
+        lCtx.fillRect(0, 0, 42, leftHeight);
+
+        const xStep = Math.max(1, Math.ceil(14 / state.displayCellSize));
+        const yStep = Math.max(1, Math.ceil(14 / state.displayCellSize));
+
+        tCtx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        tCtx.fillStyle = '#cbd5e1';
+        tCtx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        tCtx.textAlign = 'center';
+        tCtx.textBaseline = 'middle';
+        for (let x = 0; x <= state.cols; x++) {
+          const px = x * state.displayCellSize + 0.5;
+          tCtx.beginPath();
+          tCtx.moveTo(px, 0);
+          tCtx.lineTo(px, 28);
+          tCtx.stroke();
+          if (x < state.cols && (x % xStep === 0 || state.displayCellSize >= 22)) {
+            tCtx.fillText(String(x + 1), x * state.displayCellSize + state.displayCellSize / 2, 14);
+          }
+        }
+
+        lCtx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        lCtx.fillStyle = '#cbd5e1';
+        lCtx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        lCtx.textAlign = 'center';
+        lCtx.textBaseline = 'middle';
+        for (let y = 0; y <= state.rows; y++) {
+          const py = y * state.displayCellSize + 0.5;
+          lCtx.beginPath();
+          lCtx.moveTo(0, py);
+          lCtx.lineTo(42, py);
+          lCtx.stroke();
+          if (y < state.rows && (y % yStep === 0 || state.displayCellSize >= 22)) {
+            lCtx.fillText(String(y + 1), 21, y * state.displayCellSize + state.displayCellSize / 2);
+          }
+        }
+      }
+
+      function updateCanvasShellMaxHeight() {
+        const shell = els.canvasShell;
+        const workArea = els.workArea;
+        if (!shell || !workArea) return;
+        const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const shellRect = shell.getBoundingClientRect();
+        const statusHeight = els.selectionStatus.closest('.status')?.offsetHeight || 0;
+        const bottomSafe = Math.max(12, 12 + (window.visualViewport ? 0 : 0));
+        const available = Math.floor(viewportHeight - shellRect.top - statusHeight - bottomSafe);
+        const minHeight = window.innerWidth <= 640 ? 220 : 260;
+        shell.style.maxHeight = Math.max(minHeight, available) + 'px';
+        updateZoomLayout();
+      }
+
+      function renderPalette() {
+        const entries = [...state.palette.entries()].sort((a, b) => a[0] - b[0]);
+        els.paletteList.innerHTML = '';
+        for (const [num, color] of entries) {
+          const card = document.createElement('div');
+          card.className = 'palette-card';
+          if (state.activePaletteNumber === num) card.style.outline = '2px solid rgba(56, 189, 248, 0.8)';
+
+          const sw = document.createElement('div');
+          sw.className = 'swatch';
+          sw.style.setProperty('--swatch-color', color);
+
+          const meta = document.createElement('div');
+          meta.className = 'palette-meta';
+          meta.innerHTML = `<div class="palette-no">${num}</div><div class="palette-code">${color}</div>`;
+
+          const btns = document.createElement('div');
+          btns.style.display = 'grid';
+          btns.style.gap = '6px';
+
+          const useBtn = document.createElement('button');
+          useBtn.type = 'button';
+          useBtn.className = 'mini-btn';
+          useBtn.textContent = '使う';
+          useBtn.addEventListener('click', (evt) => { evt.preventDefault(); setActivePalette(num); setNotice(`現在色を ${num} に切り替えました`, 'success'); });
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'mini-btn';
+          delBtn.textContent = '削除';
+          delBtn.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            state.palette.delete(num);
+            if (state.activePaletteNumber === num) {
+              state.activePaletteNumber = null;
+              state.activeColor = null;
+            }
+            drawAll();
+            updateStatus();
+            setNotice(`色番号 ${num} を削除しました`, 'accent');
+          });
+
+          btns.append(useBtn, delBtn);
+          card.append(sw, meta, btns);
+          els.paletteList.appendChild(card);
+        }
+      }
+
+      function setActivePalette(num) {
+        const color = state.palette.get(num);
+        if (!color) return;
+        state.activePaletteNumber = num;
+        state.activeColor = color;
+        drawAll();
+        updateStatus();
+      }
+
+      function setCell(x1Based, y1Based, color) {
+        if (x1Based < 1 || x1Based > state.cols || y1Based < 1 || y1Based > state.rows) return;
+        state.grid[y1Based - 1][x1Based - 1] = color;
+      }
+
+      function fillRange(xStart, xEnd, yStart, yEnd, color) {
+        const minX = Math.max(1, Math.min(xStart, xEnd));
+        const maxX = Math.min(state.cols, Math.max(xStart, xEnd));
+        const minY = Math.max(1, Math.min(yStart, yEnd));
+        const maxY = Math.min(state.rows, Math.max(yStart, yEnd));
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            setCell(x, y, color);
+          }
+        }
+      }
+
+      function flipHorizontal() {
+        const sel = getNormalizedSelection();
+        if (!sel) return false;
+        for (let y = sel.y1 - 1; y < sel.y2; y++) {
+          const slice = state.grid[y].slice(sel.x1 - 1, sel.x2).reverse();
+          for (let x = sel.x1 - 1; x < sel.x2; x++) {
+            state.grid[y][x] = slice[x - (sel.x1 - 1)];
+          }
+        }
+        drawMainGrid();
+        return true;
+      }
+
+      function flipVertical() {
+        const sel = getNormalizedSelection();
+        if (!sel) return false;
+        const rowsSlice = state.grid.slice(sel.y1 - 1, sel.y2).map((row) => row.slice(sel.x1 - 1, sel.x2));
+        rowsSlice.reverse();
+        for (let y = sel.y1 - 1; y < sel.y2; y++) {
+          for (let x = sel.x1 - 1; x < sel.x2; x++) {
+            state.grid[y][x] = rowsSlice[y - (sel.y1 - 1)][x - (sel.x1 - 1)];
+          }
+        }
+        drawMainGrid();
+        return true;
+      }
+
+      function getCellFromEvent(evt) {
+        const rect = els.gridCanvas.getBoundingClientRect();
+        const clientX = evt.clientX ?? (evt.touches && evt.touches[0] ? evt.touches[0].clientX : 0);
+        const clientY = evt.clientY ?? (evt.touches && evt.touches[0] ? evt.touches[0].clientY : 0);
+        const cellWidth = rect.width / state.cols;
+        const cellHeight = rect.height / state.rows;
+        const x = Math.floor((clientX - rect.left) / cellWidth) + 1;
+        const y = Math.floor((clientY - rect.top) / cellHeight) + 1;
+        if (x < 1 || y < 1 || x > state.cols || y > state.rows) return null;
+        return { x, y };
+      }
+
+      function updateZoomLayout() {
+        const stage = els.canvasStage;
+        const zoomSpace = els.zoomSpace;
+        if (!stage || !zoomSpace) return;
+        const baseWidth = stage.offsetWidth || (42 + state.cols * state.displayCellSize);
+        const baseHeight = stage.offsetHeight || (28 + state.rows * state.displayCellSize);
+        stage.style.transform = `scale(${state.zoom})`;
+        zoomSpace.style.width = Math.max(baseWidth * state.zoom, els.canvasShell.clientWidth - 24, 120) + 'px';
+        zoomSpace.style.height = Math.max(baseHeight * state.zoom, els.canvasShell.clientHeight - 24, 120) + 'px';
+        els.zoomStatus.textContent = `表示倍率: ${Math.round(state.zoom * 100)}%`;
+        if (els.zoomResetBtn) {
+          els.zoomResetBtn.textContent = `${Math.round(state.zoom * 100)}%`;
+        }
+      }
+
+      function setZoom(nextZoom, clientX = null, clientY = null) {
+        const shell = els.canvasShell;
+        const rect = shell.getBoundingClientRect();
+        const oldZoom = state.zoom;
+        const newZoom = clamp(nextZoom, state.minZoom, state.maxZoom);
+        if (!Number.isFinite(newZoom) || Math.abs(newZoom - oldZoom) < 0.001) return;
+        const anchorX = clientX ?? (rect.left + rect.width / 2);
+        const anchorY = clientY ?? (rect.top + rect.height / 2);
+        const contentX = (shell.scrollLeft + anchorX - rect.left) / oldZoom;
+        const contentY = (shell.scrollTop + anchorY - rect.top) / oldZoom;
+        state.zoom = newZoom;
+        updateZoomLayout();
+        shell.scrollLeft = Math.max(0, contentX * newZoom - (anchorX - rect.left));
+        shell.scrollTop = Math.max(0, contentY * newZoom - (anchorY - rect.top));
+      }
+
+      function beginPinch(evt) {
+        if (evt.touches.length !== 2) return;
+        evt.preventDefault();
+        const [t1, t2] = evt.touches;
+        const rect = els.canvasShell.getBoundingClientRect();
+        const midpoint = getTouchMidpoint(t1, t2);
+        state.isPinching = true;
+        state.dragging = false;
+        state.selectStart = null;
+        state.lastTouchCell = null;
+        state.pinch = {
+          startDistance: Math.max(1, getTouchDistance(t1, t2)),
+          startZoom: state.zoom,
+          anchorContentX: (els.canvasShell.scrollLeft + midpoint.x - rect.left) / state.zoom,
+          anchorContentY: (els.canvasShell.scrollTop + midpoint.y - rect.top) / state.zoom,
+        };
+      }
+
+      function movePinch(evt) {
+        if (!state.pinch || evt.touches.length !== 2) return;
+        evt.preventDefault();
+        const [t1, t2] = evt.touches;
+        const rect = els.canvasShell.getBoundingClientRect();
+        const midpoint = getTouchMidpoint(t1, t2);
+        const distance = Math.max(1, getTouchDistance(t1, t2));
+        const ratio = distance / state.pinch.startDistance;
+        const nextZoom = clamp(state.pinch.startZoom * ratio, state.minZoom, state.maxZoom);
+        state.zoom = nextZoom;
+        updateZoomLayout();
+        els.canvasShell.scrollLeft = Math.max(0, state.pinch.anchorContentX * nextZoom - (midpoint.x - rect.left));
+        els.canvasShell.scrollTop = Math.max(0, state.pinch.anchorContentY * nextZoom - (midpoint.y - rect.top));
+      }
+
+      function endPinch(evt) {
+        if (evt.touches.length >= 2) return;
+        state.pinch = null;
+        state.isPinching = false;
+        state.dragging = false;
+        state.selectStart = null;
+        state.lastTouchCell = null;
+      }
+
+      function getTouchDistance(t1, t2) {
+        return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      }
+
+      function getTouchMidpoint(t1, t2) {
+        return {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
+      }
+
+      function updateStatus(cell = null) {
+        const modeLabel = state.mode === 'paint' ? '塗る' : state.mode === 'erase' ? '消しゴム' : '範囲選択';
+        els.modeStatus.textContent = `モード: ${state.pasteMode ? '貼り付け位置選択' : modeLabel}`;
+        els.coordStatus.textContent = cell ? `座標: X=${cell.x}, Y=${cell.y}` : '座標: -';
+        const currentSelection = getNormalizedSelection();
+        if (currentSelection) {
+          const width = currentSelection.x2 - currentSelection.x1 + 1;
+          const height = currentSelection.y2 - currentSelection.y1 + 1;
+          els.selectionStatus.textContent = `選択: X=${currentSelection.x1}-${currentSelection.x2}, Y=${currentSelection.y1}-${currentSelection.y2} (${width}×${height})`;
+        } else {
+          els.selectionStatus.textContent = '選択: なし';
+        }
+
+        if (state.pasteMode && state.pastePreview && state.copied) {
+          els.clipboardStatus.textContent = `貼り付け位置: X=${state.pastePreview.x}, Y=${state.pastePreview.y} (${state.copied.width}×${state.copied.height})`;
+        } else if (state.copied) {
+          els.clipboardStatus.textContent = `コピー: ${state.copied.width}×${state.copied.height}`;
+        } else {
+          els.clipboardStatus.textContent = 'コピー: なし';
+        }
+        updateSelectionAdjustButtons();
+      }
+
+      function setMode(mode, options = {}) {
+        const leavingSelectionMode = state.mode === 'select' && mode !== 'select';
+        const keepSelectionButtonHighlight = options.keepSelectionButtonHighlight ?? (mode === 'select');
+        state.mode = mode;
+        state.selectButtonHighlight = keepSelectionButtonHighlight;
+        state.pasteMode = false;
+        state.pastePreview = null;
+        if (leavingSelectionMode || mode !== 'select') {
+          state.selection = null;
+          state.selectStart = null;
+        }
+        refreshModeButtons();
+        els.pasteModeBtn.classList.remove('active');
+        drawMainGrid();
+        updateStatus();
+      }
+
+      function copySelection() {
+        const sel = getNormalizedSelection();
+        if (!sel) return false;
+        const minX = sel.x1;
+        const maxX = sel.x2;
+        const minY = sel.y1;
+        const maxY = sel.y2;
+        const cells = [];
+        for (let y = minY; y <= maxY; y++) {
+          const row = [];
+          for (let x = minX; x <= maxX; x++) {
+            row.push(state.grid[y - 1][x - 1]);
+          }
+          cells.push(row);
+        }
+        state.copied = {
+          width: maxX - minX + 1,
+          height: maxY - minY + 1,
+          cells,
+        };
+        state.pastePreview = { x: minX, y: minY };
+        updateStatus();
+        setNotice(`選択範囲をコピーしました (${state.copied.width}×${state.copied.height})`, 'success');
+        return true;
+      }
+
+      function pasteAt(x1Based, y1Based) {
+        if (!state.copied) return false;
+        const startX = clamp(x1Based, 1, state.cols);
+        const startY = clamp(y1Based, 1, state.rows);
+        for (let yy = 0; yy < state.copied.height; yy++) {
+          for (let xx = 0; xx < state.copied.width; xx++) {
+            const targetX = startX + xx;
+            const targetY = startY + yy;
+            if (targetX >= 1 && targetX <= state.cols && targetY >= 1 && targetY <= state.rows) {
+              state.grid[targetY - 1][targetX - 1] = state.copied.cells[yy][xx];
+            }
+          }
+        }
+        state.selection = {
+          x1: startX,
+          y1: startY,
+          x2: Math.min(state.cols, startX + state.copied.width - 1),
+          y2: Math.min(state.rows, startY + state.copied.height - 1),
+        };
+        drawMainGrid();
+        updateStatus();
+        return true;
+      }
+
+      function parseRangePart(text) {
+        const cleaned = normalizeCommand(text).replace(/\s+/g, '');
+        const match = cleaned.match(/^(\d+)(?:\s*(?:-|~|to)\s*(\d+))?$/i);
+        if (!match) return null;
+        const a = parseInt(match[1], 10);
+        const b = match[2] ? parseInt(match[2], 10) : a;
+        return [a, b];
+      }
+
+      function parseAxisRange(line, axisLetter) {
+        const lower = line.toLowerCase();
+        const axisIndex = lower.indexOf(axisLetter);
+        if (axisIndex === -1) return null;
+        let i = axisIndex + 1;
+        while (i < line.length && /[\s:=]/.test(line[i])) i++;
+        let out = '';
+        while (i < line.length && /[0-9~\-to\s]/i.test(line[i])) {
+          out += line[i];
+          i++;
+        }
+        return parseRangePart(out.trim());
+      }
+
+      function parseColorReference(line, xRange, yRange) {
+        const hex = line.match(/#[0-9a-f]{3,8}\b/i);
+        if (hex) return { type: 'color', value: normalizeColor(hex[0]) };
+
+        const explicitColorNo = line.match(/(?:color|色|c)\s*[:=]?\s*(\d+)\b/i);
+        if (explicitColorNo) return { type: 'palette', value: parseInt(explicitColorNo[1], 10) };
+
+        let rest = line;
+        const xRaw = line.match(/x\s*[:=]?\s*\d+(?:\s*(?:-|~|to)\s*\d+)?/i);
+        const yRaw = line.match(/y\s*[:=]?\s*\d+(?:\s*(?:-|~|to)\s*\d+)?/i);
+        if (xRaw) rest = rest.replace(xRaw[0], ' ');
+        if (yRaw) rest = rest.replace(yRaw[0], ' ');
+        rest = rest.replace(/塗る|ぬる|paint|fill|を|で|へ|,|:/gi, ' ');
+        const nums = rest.match(/\b\d+\b/g);
+        if (nums && nums.length) {
+          return { type: 'palette', value: parseInt(nums[nums.length - 1], 10) };
+        }
+        return null;
+      }
+
+      function executeCommand(rawLine) {
+        const original = String(rawLine || '');
+        const line = normalizeCommand(original);
+        if (!line) return { ok: true, message: '空行をスキップ' };
+
+        if (/^(?:左右反転|flip ?h|flip ?horizontal|hflip)$/i.test(line)) {
+          if (!flipHorizontal()) return { ok: false, message: '左右反転するには先に範囲選択してください' };
+          return { ok: true, message: '選択範囲を左右反転しました' };
+        }
+
+        if (/^(?:上下反転|flip ?v|flip ?vertical|vflip)$/i.test(line)) {
+          if (!flipVertical()) return { ok: false, message: '上下反転するには先に範囲選択してください' };
+          return { ok: true, message: '選択範囲を上下反転しました' };
+        }
+
+        if (/^(?:選択解除|clear ?selection|selection ?clear|unselect)$/i.test(line)) {
+          clearSelection();
+          return { ok: true, message: '範囲選択を解除しました' };
+        }
+
+        if (/^(?:clear|clr|クリア|全消去|キャンバスクリア|canvas ?clear)$/i.test(line)) {
+          clearGridContent();
+          return { ok: true, message: 'キャンバスをクリアしました' };
+        }
+
+        const paletteAssign = line.match(/^(\d+)\s*(?:=|:|->|=>|\s)\s*(#[0-9a-f]{3,8}|[a-z]+)$/i);
+        if (paletteAssign) {
+          const no = parseInt(paletteAssign[1], 10);
+          const color = normalizeColor(paletteAssign[2]);
+          if (!color) return { ok: false, message: `色コードが不正: ${paletteAssign[2]}` };
+          state.palette.set(no, color);
+          state.activePaletteNumber = no;
+          state.activeColor = color;
+          drawAll();
+          return { ok: true, message: `色番号 ${no} に ${color} を登録` };
+        }
+
+        if (/^(?:copy|コピー)\b/i.test(line)) {
+          const xRange = parseAxisRange(line, 'x');
+          const yRange = parseAxisRange(line, 'y');
+          if (!xRange || !yRange) return { ok: false, message: 'copy は x と y の範囲指定が必要です' };
+          state.selection = { x1: Math.min(xRange[0], xRange[1]), x2: Math.max(xRange[0], xRange[1]), y1: Math.min(yRange[0], yRange[1]), y2: Math.max(yRange[0], yRange[1]) };
+          copySelection();
+          drawMainGrid();
+          updateStatus();
+          return { ok: true, message: `X=${xRange[0]}-${xRange[1]}, Y=${yRange[0]}-${yRange[1]} をコピー` };
+        }
+
+        if (/^(?:paste|ペースト|貼り付け|貼付)\b/i.test(line)) {
+          const xRange = parseAxisRange(line, 'x');
+          const yRange = parseAxisRange(line, 'y');
+          if (!xRange || !yRange) return { ok: false, message: 'paste は x と y の開始位置が必要です' };
+          if (!state.copied) return { ok: false, message: 'コピー済みデータがありません' };
+          pasteAt(xRange[0], yRange[0]);
+          updateStatus();
+          return { ok: true, message: `X=${xRange[0]}, Y=${yRange[0]} に貼り付け` };
+        }
+
+        const xRange = parseAxisRange(line, 'x');
+        const yRange = parseAxisRange(line, 'y');
+        if (!xRange || !yRange) return { ok: false, message: `命令を解釈できません: ${original}` };
+
+        if (/(?:erase|delete|clear|消す|削除|消去)/i.test(line)) {
+          fillRange(xRange[0], xRange[1], yRange[0], yRange[1], null);
+          drawMainGrid();
+          updateStatus();
+          return { ok: true, message: `X=${xRange[0]}-${xRange[1]}, Y=${yRange[0]}-${yRange[1]} を消しました` };
+        }
+
+        const colorRef = parseColorReference(line, xRange, yRange);
+        if (!colorRef) return { ok: false, message: `色指定を解釈できません: ${original}` };
+
+        let color = null;
+        if (colorRef.type === 'color') {
+          color = colorRef.value;
+          state.activePaletteNumber = null;
+          state.activeColor = color;
+        } else {
+          color = state.palette.get(colorRef.value);
+          if (!color) return { ok: false, message: `色番号 ${colorRef.value} が未登録です` };
+          state.activePaletteNumber = colorRef.value;
+          state.activeColor = color;
+        }
+
+        fillRange(xRange[0], xRange[1], yRange[0], yRange[1], color);
+        drawMainGrid();
+        updateStatus();
+        return { ok: true, message: `X=${xRange[0]}-${xRange[1]}, Y=${yRange[0]}-${yRange[1]} を ${color} で塗りました` };
+      }
+
+      function runCommands() {
+        const lines = els.commandInput.value.split(/\r?\n/);
+        const results = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const result = executeCommand(trimmed);
+          results.push(result);
+        }
+        drawAll();
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length) {
+          alert('一部の行でエラー\n\n' + failed.map((r) => '・' + r.message).join('\n'));
+        }
+      }
+
+      function getColorRgba(color) {
+        colorProbeCtx.clearRect(0, 0, 1, 1);
+        colorProbeCtx.fillStyle = 'rgba(0,0,0,0)';
+        colorProbeCtx.fillRect(0, 0, 1, 1);
+        colorProbeCtx.fillStyle = color;
+        colorProbeCtx.fillRect(0, 0, 1, 1);
+        return colorProbeCtx.getImageData(0, 0, 1, 1).data;
+      }
+
+      function createExportCanvas(scale = state.exportScale) {
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = state.cols * scale;
+        exportCanvas.height = state.rows * scale;
+        const exportCtx = exportCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+        exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+        for (let y = 0; y < state.rows; y++) {
+          for (let x = 0; x < state.cols; x++) {
+            const color = state.grid[y][x];
+            if (color) {
+              exportCtx.fillStyle = color;
+              exportCtx.fillRect(x * scale, y * scale, scale, scale);
+            }
+          }
+        }
+        return exportCanvas;
+      }
+
+      function uint16Bytes(value) {
+        return [(value >> 8) & 255, value & 255];
+      }
+
+      function uint32Bytes(value) {
+        return [
+          (value >>> 24) & 255,
+          (value >>> 16) & 255,
+          (value >>> 8) & 255,
+          value & 255,
+        ];
+      }
+
+      function stringBytes(str) {
+        return Array.from(str).map((ch) => ch.charCodeAt(0) & 255);
+      }
+
+      function buildMinimalPsdFromCanvas(exportCanvas) {
+        const width = exportCanvas.width;
+        const height = exportCanvas.height;
+        const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
+        const imageData = exportCtx.getImageData(0, 0, width, height).data;
+        const pixelCount = width * height;
+        const channels = 4;
+        const channelBytes = new Uint8Array(pixelCount * channels);
+
+        let rOff = 0;
+        let gOff = pixelCount;
+        let bOff = pixelCount * 2;
+        let aOff = pixelCount * 3;
+
+        for (let i = 0, p = 0; i < imageData.length; i += 4, p++) {
+          channelBytes[rOff + p] = imageData[i];
+          channelBytes[gOff + p] = imageData[i + 1];
+          channelBytes[bOff + p] = imageData[i + 2];
+          channelBytes[aOff + p] = imageData[i + 3];
+        }
+
+        const bytes = [];
+        bytes.push(...stringBytes('8BPS'));
+        bytes.push(...uint16Bytes(1));
+        bytes.push(0, 0, 0, 0, 0, 0);
+        bytes.push(...uint16Bytes(channels));
+        bytes.push(...uint32Bytes(height));
+        bytes.push(...uint32Bytes(width));
+        bytes.push(...uint16Bytes(8));
+        bytes.push(...uint16Bytes(3));
+        bytes.push(...uint32Bytes(0));
+        bytes.push(...uint32Bytes(0));
+        bytes.push(...uint32Bytes(0));
+        bytes.push(...uint16Bytes(0));
+
+        const header = new Uint8Array(bytes);
+        const output = new Uint8Array(header.length + channelBytes.length);
+        output.set(header, 0);
+        output.set(channelBytes, header.length);
+        return output;
+      }
+
+      async function saveBlob(blob, suggestedName) {
+        if (window.showSaveFilePicker && window.isSecureContext) {
+          try {
+            const handle = await window.showSaveFilePicker({
+              suggestedName,
+              types: [{
+                description: 'ファイル',
+                accept: { [blob.type || 'application/octet-stream']: [suggestedName.slice(suggestedName.lastIndexOf('.'))] }
+              }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return true;
+          } catch (error) {
+            if (error && error.name === 'AbortError') return false;
+          }
+        }
+
+        try {
+          const file = new File([blob], suggestedName, { type: blob.type || 'application/octet-stream' });
+          if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: suggestedName });
+            return true;
+          }
+        } catch (error) {
+          // fallback below
+        }
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = suggestedName;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        return true;
+      }
+
+      function getBaseFileName() {
+        const raw = String(els.fileNameInput.value || 'grid-art').trim() || 'grid-art';
+        const safe = raw.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+        return safe || 'grid-art';
+      }
+
+      async function createExportFiles() {
+        const name = getBaseFileName();
+        const exportCanvas = createExportCanvas();
+        const pngBlob = await new Promise((resolve) => exportCanvas.toBlob(resolve, 'image/png'));
+        if (!pngBlob) {
+          throw new Error('PNG の書き出しに失敗しました。');
+        }
+        const psdBytes = buildMinimalPsdFromCanvas(exportCanvas);
+        const psdBlob = new Blob([psdBytes], { type: 'application/octet-stream' });
+        return {
+          name,
+          pngBlob,
+          psdBlob,
+          pngFile: new File([pngBlob], `${name}.png`, { type: 'image/png' }),
+          psdFile: new File([psdBlob], `${name}.psd`, { type: 'application/octet-stream' }),
+        };
+      }
+
+      async function savePng() {
+        try {
+          const { name, pngBlob } = await createExportFiles();
+          const saved = await saveBlob(pngBlob, `${name}.png`);
+          if (saved) setNotice(`PNG を ${name}.png で保存しました`, 'success');
+        } catch (error) {
+          setNotice(error?.message || 'PNG の書き出しに失敗しました。', 'error');
+        }
+      }
+
+      async function savePsd() {
+        try {
+          const { name, psdBlob } = await createExportFiles();
+          const saved = await saveBlob(psdBlob, `${name}.psd`);
+          if (saved) setNotice(`PSD を ${name}.psd で保存しました`, 'success');
+        } catch (error) {
+          setNotice(error?.message || 'PSD の書き出しに失敗しました。', 'error');
+        }
+      }
+
+      async function saveBoth() {
+        try {
+          const { name, pngBlob, psdBlob, pngFile, psdFile } = await createExportFiles();
+
+          try {
+            if (navigator.canShare && navigator.share && navigator.canShare({ files: [pngFile, psdFile] })) {
+              await navigator.share({
+                files: [pngFile, psdFile],
+                title: `${name} の書き出し`,
+              });
+              setNotice(`PNG と PSD をまとめて共有しました。「ファイルに保存」で ${name}.png / ${name}.psd のまま保存できます`, 'success');
+              return;
+            }
+          } catch (error) {
+            // fallback below
+          }
+
+          const pngSaved = await saveBlob(pngBlob, `${name}.png`);
+          const psdSaved = await saveBlob(psdBlob, `${name}.psd`);
+          if (pngSaved || psdSaved) {
+            setNotice(`PNG と PSD を順番に保存しました`, 'success');
+          }
+        } catch (error) {
+          setNotice(error?.message || 'PNG / PSD のまとめ保存に失敗しました。', 'error');
+        }
+      }
+
+      function savePaletteFromForm() {
+        const no = clamp(parseInt(els.paletteNumberInput.value || '1', 10) || 1, 1, 999999);
+        const color = normalizeColor(els.paletteColorInput.value || els.paletteColorPicker.value);
+        if (!color) {
+          setNotice('色コードが不正です。例: #040F / #FF0000', 'error');
+          return false;
+        }
+        state.palette.set(no, color);
+        state.activePaletteNumber = no;
+        state.activeColor = color;
+        els.paletteColorInput.value = color;
+        drawAll();
+        updateStatus();
+        return true;
+      }
+
+      function handlePointerDown(evt) {
+        if (state.isPinching) return;
+        const cell = getCellFromEvent(evt);
+        if (!cell) return;
+        els.gridCanvas.setPointerCapture?.(evt.pointerId);
+        state.dragging = true;
+        state.lastTouchCell = cell;
+        if (state.pasteMode) {
+          setPastePreview(cell.x, cell.y);
+          updateStatus(cell);
+          evt.preventDefault();
+          return;
+        }
+
+        if (state.mode === 'paint' || state.mode === 'erase') {
+          if (state.mode === 'paint' && !state.activeColor) {
+            setNotice('先に色番号を登録するか、現在色を設定してください。', 'error');
+            return;
+          }
+          setCell(cell.x, cell.y, state.mode === 'erase' ? null : state.activeColor);
+          drawMainGrid();
+          updateStatus(cell);
+          evt.preventDefault();
+          return;
+        }
+
+        state.selectStart = cell;
+        state.selection = { x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y };
+        drawMainGrid();
+        updateStatus(cell);
+        evt.preventDefault();
+      }
+
+      function handlePointerMove(evt) {
+        if (state.isPinching) return;
+        const cell = getCellFromEvent(evt);
+        if (!cell) {
+          updateStatus();
+          return;
+        }
+        updateStatus(cell);
+        if (!state.dragging) return;
+
+        if (state.pasteMode) {
+          if (!state.lastTouchCell || state.lastTouchCell.x !== cell.x || state.lastTouchCell.y !== cell.y) {
+            setPastePreview(cell.x, cell.y);
+            state.lastTouchCell = cell;
+          }
+          evt.preventDefault();
+          return;
+        }
+
+        if ((state.mode === 'paint' || state.mode === 'erase') && !state.pasteMode) {
+          if (state.mode === 'paint' && !state.activeColor) return;
+          if (!state.lastTouchCell || state.lastTouchCell.x !== cell.x || state.lastTouchCell.y !== cell.y) {
+            setCell(cell.x, cell.y, state.mode === 'erase' ? null : state.activeColor);
+            state.lastTouchCell = cell;
+            drawMainGrid();
+          }
+          evt.preventDefault();
+          return;
+        }
+
+        if (state.mode === 'select' && state.selectStart) {
+          state.selection = {
+            x1: state.selectStart.x,
+            y1: state.selectStart.y,
+            x2: cell.x,
+            y2: cell.y,
+          };
+          drawMainGrid();
+          updateStatus(cell);
+          evt.preventDefault();
+        }
+      }
+
+      function handlePointerUp(evt) {
+        if (state.isPinching) return;
+        state.dragging = false;
+        state.selectStart = null;
+        state.lastTouchCell = null;
+        const cell = getCellFromEvent(evt);
+        updateStatus(cell);
+      }
+
+      function stabilizeButtonViewport(button) {
+        if (!button) return;
+        let lastX = 0;
+        let lastY = 0;
+        const remember = () => {
+          lastX = window.scrollX || window.pageXOffset || 0;
+          lastY = window.scrollY || window.pageYOffset || 0;
+        };
+        const restore = () => {
+          try {
+            if (document.activeElement === button && typeof button.blur === 'function') {
+              button.blur();
+            }
+          } catch (error) {}
+          requestAnimationFrame(() => {
+            const nowX = window.scrollX || window.pageXOffset || 0;
+            const nowY = window.scrollY || window.pageYOffset || 0;
+            if (Math.abs(nowX - lastX) > 1 || Math.abs(nowY - lastY) > 1) {
+              window.scrollTo(lastX, lastY);
+            }
+          });
+        };
+        button.addEventListener('touchstart', remember, { passive: true });
+        button.addEventListener('pointerdown', remember, { passive: true });
+        button.addEventListener('mousedown', remember, { passive: true });
+        button.addEventListener('click', restore, { passive: true });
+        button.addEventListener('touchend', restore, { passive: true });
+      }
+
+      function bindEvents() {
+        document.querySelectorAll('button').forEach((button) => {
+          button.type = 'button';
+          stabilizeButtonViewport(button);
+          button.addEventListener('click', () => {
+            if (button !== els.modeSelectBtn) {
+              deactivateSelectionButtonHighlight();
+            }
+            try { button.blur(); } catch (error) {}
+          }, { passive: true });
+          button.addEventListener('touchend', () => {
+            try { button.blur(); } catch (error) {}
+          }, { passive: true });
+        });
+        els.createCanvasBtn.addEventListener('click', (evt) => { evt.preventDefault(); setupCanvasFromInputs(); setNotice('キャンバスを作り直しました', 'success'); });
+        els.clearCanvasBtn.addEventListener('click', (evt) => { evt.preventDefault(); clearGridContent(); });
+
+        els.savePaletteBtn.addEventListener('click', (evt) => { evt.preventDefault(); if (savePaletteFromForm()) setNotice('色番号を登録しました', 'success'); });
+        els.savePaletteBulkBtn.addEventListener('click', (evt) => { evt.preventDefault(); savePaletteBulk(); });
+        els.clearPaletteBulkBtn.addEventListener('click', (evt) => { evt.preventDefault(); els.paletteBulkInput.value = ''; setNotice('まとめ入力欄を消しました', 'accent'); });
+        els.setActiveFromFormBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          const color = normalizeColor(els.paletteColorInput.value || els.paletteColorPicker.value);
+          if (!color) {
+            setNotice('色コードが不正です。', 'error');
+            return;
+          }
+          state.activePaletteNumber = null;
+          state.activeColor = color;
+          updateActiveColorPill();
+          updateStatus();
+          setNotice(`現在色を ${color} にしました`, 'success');
+        });
+
+        els.paletteColorPicker.addEventListener('input', () => {
+          els.paletteColorInput.value = els.paletteColorPicker.value.toUpperCase();
+        });
+        els.paletteColorInput.addEventListener('change', syncColorInputsFromText);
+
+        els.runCommandsBtn.addEventListener('click', (evt) => { evt.preventDefault(); runCommands(); });
+        els.clearCommandsBtn.addEventListener('click', (evt) => { evt.preventDefault(); els.commandInput.value = ''; setNotice('命令入力欄を消しました', 'accent'); });
+
+        els.modePaintBtn.addEventListener('click', (evt) => { evt.preventDefault(); setMode('paint'); });
+        els.modeEraseBtn.addEventListener('click', (evt) => { evt.preventDefault(); setMode('erase'); });
+        els.modeSelectBtn.addEventListener('click', (evt) => { evt.preventDefault(); setMode('select', { keepSelectionButtonHighlight: true }); });
+        els.copySelectionBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!copySelection()) setNotice('先に範囲選択してください。', 'error');
+        });
+        els.clearSelectionBtn.addEventListener('click', (evt) => { evt.preventDefault(); clearSelection(); setNotice('範囲選択を解除しました', 'accent'); });
+        els.selectionExpandModeBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          state.selectionAdjustMode = 'expand';
+          updateSelectionAdjustButtons();
+          setNotice('矢印は選択範囲を広げます', 'accent');
+        });
+        els.selectionShrinkModeBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          state.selectionAdjustMode = 'shrink';
+          updateSelectionAdjustButtons();
+          setNotice('矢印は選択範囲を縮めます', 'accent');
+        });
+        els.adjustUpBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!adjustSelectionFromArrow('up')) setNotice(state.pasteMode ? '貼り付け位置かコピー内容がありません。' : '先に範囲選択してください。', 'error');
+        });
+        els.adjustLeftBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!adjustSelectionFromArrow('left')) setNotice(state.pasteMode ? '貼り付け位置かコピー内容がありません。' : '先に範囲選択してください。', 'error');
+        });
+        els.adjustRightBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!adjustSelectionFromArrow('right')) setNotice(state.pasteMode ? '貼り付け位置かコピー内容がありません。' : '先に範囲選択してください。', 'error');
+        });
+        els.adjustDownBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!adjustSelectionFromArrow('down')) setNotice(state.pasteMode ? '貼り付け位置かコピー内容がありません。' : '先に範囲選択してください。', 'error');
+        });
+        els.pasteModeBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!state.copied) {
+            setNotice('先にコピーしてください。', 'error');
+            return;
+          }
+          state.pasteMode = !state.pasteMode;
+          if (state.pasteMode) {
+            setMode('select', { keepSelectionButtonHighlight: false });
+            state.pasteMode = true;
+            state.selection = null;
+            state.selectStart = null;
+            ensurePastePreview();
+            els.pasteModeBtn.classList.add('active');
+            drawMainGrid();
+            updateStatus();
+            setNotice('紫の枠をタップや矢印で動かしてから「この位置に貼り付け」を押してください', 'accent');
+          } else {
+            state.pastePreview = null;
+            els.pasteModeBtn.classList.remove('active');
+            drawMainGrid();
+            updateStatus();
+            setNotice('貼り付け位置選択を終了しました', 'accent');
+          }
+        });
+        els.applyPasteBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!(state.pasteMode && state.pastePreview && state.copied)) {
+            setNotice('先に貼り付け位置を選んでください。', 'error');
+            return;
+          }
+          pasteAt(state.pastePreview.x, state.pastePreview.y);
+          state.pasteMode = false;
+          els.pasteModeBtn.classList.remove('active');
+          setNotice(`X=${state.pastePreview.x}, Y=${state.pastePreview.y} に貼り付けました`, 'success');
+          state.pastePreview = null;
+          drawMainGrid();
+          updateStatus();
+        });
+        els.flipHBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!flipHorizontal()) {
+            setNotice('先に範囲選択してください。', 'error');
+            return;
+          }
+          updateStatus();
+          setNotice('選択範囲を左右反転しました', 'success');
+        });
+        els.flipVBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          if (!flipVertical()) {
+            setNotice('先に範囲選択してください。', 'error');
+            return;
+          }
+          updateStatus();
+          setNotice('選択範囲を上下反転しました', 'success');
+        });
+        els.toolbarClearBtn.addEventListener('click', (evt) => { evt.preventDefault(); clearGridContent(); });
+        els.zoomOutBtn.addEventListener('click', (evt) => { evt.preventDefault(); setZoom(state.zoom / 1.2); });
+        els.zoomResetBtn.addEventListener('click', (evt) => { evt.preventDefault(); setZoom(1); });
+        els.zoomInBtn.addEventListener('click', (evt) => { evt.preventDefault(); setZoom(state.zoom * 1.2); });
+        els.savePngBtn.addEventListener('click', (evt) => { evt.preventDefault(); savePng(); });
+        els.savePsdBtn.addEventListener('click', (evt) => { evt.preventDefault(); savePsd(); });
+        els.saveBothBtn.addEventListener('click', (evt) => { evt.preventDefault(); saveBoth(); });
+
+        els.gridCanvas.addEventListener('pointerdown', handlePointerDown);
+        els.gridCanvas.addEventListener('pointermove', handlePointerMove);
+        els.gridCanvas.addEventListener('pointerup', handlePointerUp);
+        els.gridCanvas.addEventListener('pointerleave', () => updateStatus());
+
+        els.canvasShell.addEventListener('touchstart', (evt) => {
+          if (evt.touches.length === 2) beginPinch(evt);
+        }, { passive: false });
+
+        els.canvasShell.addEventListener('touchmove', (evt) => {
+          if (evt.touches.length === 2 || state.isPinching) {
+            movePinch(evt);
+          }
+        }, { passive: false });
+
+        els.canvasShell.addEventListener('touchend', endPinch, { passive: false });
+        els.canvasShell.addEventListener('touchcancel', endPinch, { passive: false });
+
+        window.addEventListener('resize', drawAll);
+        window.addEventListener('orientationchange', drawAll);
+        window.addEventListener('scroll', updateCanvasShellMaxHeight, { passive: true });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', updateCanvasShellMaxHeight);
+          window.visualViewport.addEventListener('scroll', updateCanvasShellMaxHeight);
+        }
+      }
+
+      function init() {
+        applyPaletteDefaults();
+        els.paletteColorInput.value = '#040F';
+        els.paletteColorPicker.value = '#004400';
+        bindEvents();
+        setupCanvasFromInputs();
+        updateCanvasShellMaxHeight();
+        setNotice('準備OK', 'accent');
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
