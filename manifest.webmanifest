@@ -1,0 +1,19 @@
+{
+  "id": "./index.html",
+  "name": "Game-making-tools | ゲーム制作ツール",
+  "short_name": "制作ツール",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1729",
+  "theme_color": "#0e1729",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

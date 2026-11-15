@@ -1,0 +1,698 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>立ち絵ドット変換</title><link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0e1729">
+<meta name="apple-mobile-web-app-capable" content="yes"><style>*{box-sizing:border-box}html{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:#0e1729;color:#e8eefb}
+body{margin:0;min-height:100dvh;padding:calc(20px + env(safe-area-inset-top)) 16px calc(36px + env(safe-area-inset-bottom))}
+main{max-width:900px;margin:auto}h1{font-size:clamp(24px,5vw,35px);margin:18px 0 6px}p{line-height:1.6;color:#b3c1d5}.back{color:#93d5fb}
+.panel{padding:18px;background:#17263b;border:1px solid #30435e;border-radius:17px;margin:18px 0}
+label{display:block;font-size:14px;margin:12px 0 7px;color:#d8e4ef}input,select,button{font:inherit}input[type=file],input[type=text],select,input[type=color]{width:100%;max-width:100%;padding:12px;background:#0c1829;border:1px solid #496078;border-radius:10px;color:#e8eefb}
+input[type=color]{height:48px}button,.download{display:inline-flex;align-items:center;justify-content:center;padding:12px 16px;border:0;border-radius:10px;background:#71c5ed;color:#102137;font-weight:700;text-decoration:none;cursor:pointer;margin:7px 6px 7px 0}
+.download{background:#acf0ca}.download:focus-visible,button:focus-visible{outline:3px solid #fff}button:disabled{opacity:.5;cursor:default}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d192a;padding:14px;border-radius:12px;font-size:13px}
+small,.note{color:#a8bbd1}img.preview{max-width:100%;max-height:360px;object-fit:contain;image-rendering:pixelated;background:repeating-conic-gradient(#fff 0 25%,#ccd3dd 0 50%) 0/18px 18px;border-radius:8px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.item{padding:10px 0;border-bottom:1px solid #40506b}
+a{color:#a6defa}#result:not(:empty){margin-top:16px}</style>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+html, body { margin:0; padding:0; background:#111; color:#fff; }
+canvas { display:none; }
+</style>
+</head>
+<body><section class="panel" style="margin:12px auto;max-width:760px"><a href="./index.html">← ツール一覧</a><h1>立ち絵ドット変換</h1><p>元のドット変換エンジンを使い、画像をまとめて1倍サイズのPNGに変換します。結果をタップして保存してください。</p><label>画像を選択（複数可）<input type="file" id="files" accept="image/*" multiple></label><div class="row"><label>出力モード<select id="mode"><option value="canvas">固定キャンバス</option><option value="width">指定幅（比率維持）</option></select></label><label>固定キャンバス<select id="canvasSize"><option value="256x384">256 × 384</option><option value="192x288">192 × 288</option><option value="160x240">160 × 240</option></select></label><label>指定幅<select id="width"><option>256</option><option>192</option><option>160</option><option>128</option></select></label><label>代表色<select id="sample"><option value="mean">mean</option><option value="median">median</option></select></label><label>顔保護<select id="face"><option value="very strong">very strong</option><option value="strong">strong</option><option value="normal">normal</option></select></label></div><button id="convert">変換</button><p id="status" role="status"></p><div id="output"></div></section>
+<script>
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
+function getIdx(x, y, w) { return (y * w + x) * 4 }
+function createCanvas(w, h) {
+  const c = document.createElement("canvas")
+  c.width = w
+  c.height = h
+  return c
+}
+function imageDataToCanvas(imgData, w, h) {
+  const c = createCanvas(w, h)
+  const ctx = c.getContext("2d", { willReadFrequently: true })
+  ctx.putImageData(new ImageData(imgData, w, h), 0, 0)
+  return c
+}
+function canvasToImageData(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  return { data: new Uint8ClampedArray(d.data), w: canvas.width, h: canvas.height }
+}
+function loadImage(src) {
+  return new Promise(function(resolve, reject) {
+    const img = new Image()
+    img.onload = function() { resolve(img) }
+    img.onerror = function() { reject(new Error("画像読み込み失敗")) }
+    img.src = src
+  })
+}
+function upscalePreview(img, scale) {
+  const srcCanvas = imageDataToCanvas(img.data, img.w, img.h)
+  const out = createCanvas(img.w * scale, img.h * scale)
+  const ctx = out.getContext("2d")
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(srcCanvas, 0, 0, out.width, out.height)
+  return out
+}
+function toGammaSpace(v, gamma) {
+  return Math.pow(clamp(v / 255, 0, 1), gamma)
+}
+function fromGammaSpace(v, gamma) {
+  return Math.round(clamp(Math.pow(clamp(v, 0, 1), 1 / gamma), 0, 1) * 255)
+}
+function brightnessFromRgb(r, g, b, gamma) {
+  const rr = toGammaSpace(r, gamma)
+  const gg = toGammaSpace(g, gamma)
+  const bb = toGammaSpace(b, gamma)
+  return 0.2126 * rr + 0.7152 * gg + 0.0722 * bb
+}
+function median(arr) {
+  if (!arr.length) return 0
+  const copy = arr.slice().sort(function(a, b) { return a - b })
+  return copy[Math.floor(copy.length / 2)]
+}
+function mixColor(base, ink, t) {
+  t = clamp(t, 0, 1)
+  return {
+    r: Math.round(base.r * (1 - t) + ink.r * t),
+    g: Math.round(base.g * (1 - t) + ink.g * t),
+    b: Math.round(base.b * (1 - t) + ink.b * t),
+  }
+}
+function multiplyOne(base, ink) {
+  return Math.round((base * ink) / 255)
+}
+function screenOne(base, ink) {
+  return 255 - Math.round(((255 - base) * (255 - ink)) / 255)
+}
+function isSkinLike(r, g, b, a) {
+  if (a < 16) return false
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  if (max - min < 10) return false
+  if (!(r >= g && g >= b)) return false
+  if (r < 70 || g < 35 || b < 20) return false
+  if (r - b < 16) return false
+  return true
+}
+function boxContains(box, x, y, pad) {
+  pad = pad || 0
+  return x >= box.x1 - pad && x <= box.x2 + pad && y >= box.y1 - pad && y <= box.y2 + pad
+}
+function boxesIntersect(x0, y0, x1, y1, box, pad) {
+  pad = pad || 0
+  return !(x1 < box.x1 - pad || x0 > box.x2 + pad || y1 < box.y1 - pad || y0 > box.y2 + pad)
+}
+function expandBox(box, pad, w, h) {
+  return {
+    x1: clamp(box.x1 - pad, 0, w - 1),
+    y1: clamp(box.y1 - pad, 0, h - 1),
+    x2: clamp(box.x2 + pad, 0, w - 1),
+    y2: clamp(box.y2 + pad, 0, h - 1),
+  }
+}
+function detectFaceBox(img, faceProtect) {
+  const { data, w, h } = img
+  const xMin = Math.floor(w * 0.12)
+  const xMax = Math.ceil(w * 0.88)
+  const yMin = 0
+  const yMax = Math.ceil(h * 0.56)
+
+  let x1 = w, y1 = h, x2 = -1, y2 = -1, count = 0
+  for (let y = yMin; y < yMax; y++) {
+    for (let x = xMin; x < xMax; x++) {
+      const i = getIdx(x, y, w)
+      if (isSkinLike(data[i], data[i+1], data[i+2], data[i+3])) {
+        count++
+        if (x < x1) x1 = x
+        if (y < y1) y1 = y
+        if (x > x2) x2 = x
+        if (y > y2) y2 = y
+      }
+    }
+  }
+
+  let box
+  if (count >= Math.max(18, Math.floor(w * h * 0.002))) {
+    box = { x1, y1, x2, y2 }
+  } else {
+    box = {
+      x1: Math.floor(w * 0.26),
+      y1: Math.floor(h * 0.06),
+      x2: Math.ceil(w * 0.74),
+      y2: Math.ceil(h * 0.36),
+    }
+  }
+
+  const pad = faceProtect === "very strong" ? Math.max(4, Math.round(Math.min(w, h) * 0.01))
+            : faceProtect === "strong" ? 3 : 2
+  return expandBox(box, pad, w, h)
+}
+
+function faceZoneForCell(x0, y0, x1, y1, faceBox) {
+  const cx = (x0 + x1 - 1) * 0.5
+  const cy = (y0 + y1 - 1) * 0.5
+  if (!boxContains(faceBox, cx, cy, 0)) return "none"
+
+  const fw = Math.max(1, faceBox.x2 - faceBox.x1 + 1)
+  const fh = Math.max(1, faceBox.y2 - faceBox.y1 + 1)
+  const nx = (cx - faceBox.x1) / fw
+  const ny = (cy - faceBox.y1) / fh
+
+  const inCoreX = nx >= 0.18 && nx <= 0.82
+  if (inCoreX && ny >= 0.18 && ny <= 0.54) return "eyes"
+  if (inCoreX && ny >= 0.58 && ny <= 0.88) return "mouth"
+  return "face"
+}
+function buildLaplacian(img, gamma) {
+  const { data, w, h } = img
+  const lum = new Float32Array(w * h)
+  const alpha = new Float32Array(w * h)
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = getIdx(x, y, w)
+      const a = data[i + 3] / 255
+      const p = y * w + x
+      alpha[p] = a
+      if (a < 0.02) {
+        lum[p] = 0
+        continue
+      }
+      lum[p] = brightnessFromRgb(data[i], data[i + 1], data[i + 2], gamma)
+    }
+  }
+
+  const edge = new Float32Array(w * h)
+  let sum = 0
+  let count = 0
+  let maxV = 0
+
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const p = y * w + x
+      if (alpha[p] < 0.02) continue
+
+      const c = lum[p]
+      const left = lum[p - 1]
+      const right = lum[p + 1]
+      const up = lum[p - w]
+      const down = lum[p + w]
+      const diag1 = lum[p - w - 1]
+      const diag2 = lum[p - w + 1]
+      const diag3 = lum[p + w - 1]
+      const diag4 = lum[p + w + 1]
+
+      const v = Math.abs(8 * c - left - right - up - down - diag1 - diag2 - diag3 - diag4)
+      edge[p] = v
+      sum += v
+      count++
+      if (v > maxV) maxV = v
+    }
+  }
+
+  const mean = count ? (sum / count) : 0
+  return {
+    lum: lum,
+    alpha: alpha,
+    edge: edge,
+    meanEdge: mean,
+    maxEdge: maxV,
+    w: w,
+    h: h,
+  }
+}
+function thresholds(faceProtect) {
+  if (faceProtect === "normal") {
+    return {
+      contrast: 0.22,
+      edgeDensity: 0.10,
+      edgePeak: 0.56,
+      lineDensity: 0.06,
+      priorityBias: 0.08,
+      brightGap: 0.22,
+      brightLum: 0.78,
+    }
+  }
+  if (faceProtect === "strong") {
+    return {
+      contrast: 0.18,
+      edgeDensity: 0.08,
+      edgePeak: 0.48,
+      lineDensity: 0.05,
+      priorityBias: 0.06,
+      brightGap: 0.18,
+      brightLum: 0.74,
+    }
+  }
+  return {
+    contrast: 0.14,
+    edgeDensity: 0.06,
+    edgePeak: 0.42,
+    lineDensity: 0.04,
+    priorityBias: 0.04,
+    brightGap: 0.14,
+    brightLum: 0.70,
+  }
+}
+function collectCell(img, lap, x0, y0, x1, y1, cfg, faceBox) {
+  const { data, w } = img
+  const gamma = cfg.gamma
+  const t = thresholds(cfg.faceProtect)
+  const zone = faceZoneForCell(x0, y0, x1, y1, faceBox)
+  const insideFace = zone !== "none"
+  const insideEye = zone === "eyes"
+  const insideMouth = zone === "mouth"
+  const insideFeature = insideEye || insideMouth
+
+  let alphaSum = 0
+  let opaqueCount = 0
+  let linR = 0
+  let linG = 0
+  let linB = 0
+  let minLum = Infinity
+  let maxLum = -Infinity
+  let baseLumApprox = 0
+  let edgeMax = 0
+  let edgeCount = 0
+
+  const rList = []
+  const gList = []
+  const bList = []
+  const aList = []
+
+  let darkest = null
+  let darkestEdge = null
+  let brightest = null
+  let brightestEdge = null
+  let whiteishCount = 0
+  let darkishCount = 0
+  let veryDarkCount = 0
+  let nearWhiteCount = 0
+
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = getIdx(x, y, w)
+      const a = data[i + 3]
+      if (a < 8) continue
+
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const p = y * w + x
+      const lum = lap.lum[p]
+      const e = lap.edge[p]
+
+      opaqueCount++
+      alphaSum += a / 255
+
+      const rr = toGammaSpace(r, gamma)
+      const gg = toGammaSpace(g, gamma)
+      const bb = toGammaSpace(b, gamma)
+      linR += rr
+      linG += gg
+      linB += bb
+      rList.push(rr)
+      gList.push(gg)
+      bList.push(bb)
+      aList.push(a / 255)
+
+      if (lum < minLum) minLum = lum
+      if (lum > maxLum) maxLum = lum
+      baseLumApprox += lum
+      if (e > edgeMax) edgeMax = e
+      if (e > lap.meanEdge * (insideFeature ? 1.02 : 1.15)) edgeCount++
+
+      if (!darkest || lum < darkest.lum) darkest = { r, g, b, lum }
+      if (!brightest || lum > brightest.lum) brightest = { r, g, b, lum }
+
+      if (e > lap.meanEdge * (insideFeature ? 1.00 : 1.12)) {
+        if (!darkestEdge || lum < darkestEdge.lum) darkestEdge = { r, g, b, lum, edge: e }
+        if (!brightestEdge || lum > brightestEdge.lum) brightestEdge = { r, g, b, lum, edge: e }
+      }
+
+      const mx = Math.max(r, g, b)
+      const mn = Math.min(r, g, b)
+      if (mx > 190 && (mx - mn) < 75) whiteishCount++
+      if (mx > 220 && mn > 180) nearWhiteCount++
+      if (lum < 0.28) darkishCount++
+      if (lum < 0.18) veryDarkCount++
+    }
+  }
+
+  if (!opaqueCount) {
+    return {
+      empty: true,
+      baseColor: { r: 0, g: 0, b: 0, a: 0 },
+      lineColor: { r: 255, g: 255, b: 255, a: 0 },
+      highlightColor: { r: 255, g: 255, b: 255, a: 0 },
+    }
+  }
+
+  let baseColor
+  if (cfg.sampleMode === "median") {
+    baseColor = {
+      r: fromGammaSpace(median(rList), gamma),
+      g: fromGammaSpace(median(gList), gamma),
+      b: fromGammaSpace(median(bList), gamma),
+      a: Math.round(clamp(median(aList), 0, 1) * 255),
+    }
+  } else {
+    baseColor = {
+      r: fromGammaSpace(linR / opaqueCount, gamma),
+      g: fromGammaSpace(linG / opaqueCount, gamma),
+      b: fromGammaSpace(linB / opaqueCount, gamma),
+      a: Math.round(clamp(alphaSum / opaqueCount, 0, 1) * 255),
+    }
+  }
+
+  const contrast = maxLum - minLum
+  const edgeDensity = edgeCount / opaqueCount
+  const edgeNorm = lap.maxEdge > 0 ? edgeMax / lap.maxEdge : 0
+  const avgLum = baseLumApprox / opaqueCount
+  const ink = darkestEdge || darkest || { r: 0, g: 0, b: 0, lum: 0 }
+  const bright = brightestEdge || brightest || { r: 255, g: 255, b: 255, lum: 1 }
+  const inkGap = avgLum - ink.lum
+  const brightGap = bright.lum - avgLum
+
+  const hasStrongBoundary =
+    contrast >= (insideFeature ? t.contrast * 0.72 : t.contrast) ||
+    edgeDensity >= (insideFeature ? t.edgeDensity * 0.60 : t.edgeDensity) ||
+    edgeNorm >= (insideFeature ? t.edgePeak * 0.74 : t.edgePeak)
+
+  let prioritizedColor = baseColor
+  const priorityBias = insideFeature ? Math.max(0.02, t.priorityBias * 0.45) : t.priorityBias
+  if (hasStrongBoundary && inkGap > priorityBias) {
+    let priorityMix = clamp(
+      ((contrast - t.contrast) * 2.2) +
+      (edgeDensity * 2.0) +
+      ((edgeNorm - t.edgePeak) * 1.7) +
+      (inkGap * 2.0),
+      0,
+      1
+    )
+    if (insideFeature) {
+      priorityMix = clamp(priorityMix * 1.35 + (veryDarkCount / opaqueCount) * 1.15, 0.12, insideEye ? 0.56 : 0.62)
+    }
+    prioritizedColor = {
+      ...mixColor(baseColor, ink, priorityMix),
+      a: baseColor.a,
+    }
+  }
+
+  const whiteishRatio = whiteishCount / opaqueCount
+  const nearWhiteRatio = nearWhiteCount / opaqueCount
+  const darkishRatio = darkishCount / opaqueCount
+  const veryDarkRatio = veryDarkCount / opaqueCount
+  const brightNearWhite = Math.max(bright.r, bright.g, bright.b) >= 208 && (Math.max(bright.r, bright.g, bright.b) - Math.min(bright.r, bright.g, bright.b)) <= 96
+
+  const canProtectHighlight =
+    insideEye &&
+    brightNearWhite &&
+    whiteishRatio >= 0.05 &&
+    whiteishRatio <= 0.45 &&
+    darkishRatio >= 0.04 &&
+    bright.lum >= t.brightLum &&
+    brightGap >= t.brightGap * 0.7 &&
+    contrast >= t.contrast * 0.78 &&
+    (edgeDensity >= t.lineDensity * 0.55 || edgeNorm >= t.edgePeak * 0.68 || !!darkestEdge)
+
+  let lineAlpha = 255
+  let highlightAlpha = 0
+  let finalBase = prioritizedColor
+
+  if (insideEye) {
+    lineAlpha = cfg.faceProtect === "very strong" ? 236 : 246
+
+    if (hasStrongBoundary && inkGap > 0.025) {
+      const darkMix = clamp((inkGap * 1.7) + (edgeDensity * 1.25) + (edgeNorm * 0.55) + (veryDarkRatio * 1.0), 0.10, cfg.faceProtect === "very strong" ? 0.42 : 0.34)
+      finalBase = {
+        ...mixColor(baseColor, ink, darkMix),
+        a: baseColor.a,
+      }
+    }
+
+    if (canProtectHighlight) {
+      const softLift = clamp((brightGap * 0.55) + (whiteishRatio * 0.42) + (nearWhiteRatio * 0.65), 0.04, cfg.faceProtect === "very strong" ? 0.16 : 0.13)
+      finalBase = {
+        ...mixColor(finalBase, bright, softLift),
+        a: baseColor.a,
+      }
+      highlightAlpha = Math.round(clamp((brightGap * 1.45) + (whiteishRatio * 1.05) + (nearWhiteRatio * 1.4), 0.18, cfg.faceProtect === "very strong" ? 0.90 : 0.78) * 255)
+    }
+  } else if (insideMouth) {
+    lineAlpha = cfg.faceProtect === "very strong" ? 244 : 250
+    if (hasStrongBoundary && inkGap > 0.018) {
+      const mouthMix = clamp((inkGap * 1.95) + (edgeDensity * 1.4) + (edgeNorm * 0.65), 0.16, cfg.faceProtect === "very strong" ? 0.56 : 0.46)
+      finalBase = {
+        ...mixColor(baseColor, ink, mouthMix),
+        a: baseColor.a,
+      }
+    }
+  } else if (insideFace) {
+    lineAlpha = cfg.faceProtect === "very strong" ? 222 : 236
+  }
+
+  const shouldDrawLine =
+    !!darkestEdge &&
+    (
+      insideFeature
+        ? (
+            edgeDensity >= t.lineDensity * 0.52 ||
+            edgeNorm >= t.edgePeak * 0.66 ||
+            contrast >= t.contrast * 0.72 ||
+            inkGap >= 0.05
+          )
+        : (
+            edgeDensity >= t.lineDensity ||
+            edgeNorm >= t.edgePeak ||
+            contrast >= t.contrast + 0.05
+          )
+    )
+
+  const highlightColor = canProtectHighlight
+    ? {
+        r: Math.max(240, bright.r),
+        g: Math.max(240, bright.g),
+        b: Math.max(240, bright.b),
+        a: highlightAlpha,
+      }
+    : { r: 255, g: 255, b: 255, a: 0 }
+
+  return {
+    empty: false,
+    baseColor: finalBase,
+    lineColor: shouldDrawLine
+      ? { r: ink.r, g: ink.g, b: ink.b, a: lineAlpha }
+      : { r: 255, g: 255, b: 255, a: 0 },
+    highlightColor: highlightColor,
+  }
+}
+function buildSeparatedLayers(img, outW, outH, cfg, faceBox) {
+  const cellW = img.w / outW
+  const cellH = img.h / outH
+
+  const lap = buildLaplacian(img, cfg.gamma)
+  const flat = new Uint8ClampedArray(outW * outH * 4)
+  const line = new Uint8ClampedArray(outW * outH * 4)
+  const highlight = new Uint8ClampedArray(outW * outH * 4)
+
+  for (let gy = 0; gy < outH; gy++) {
+    const y0 = Math.floor(gy * cellH)
+    const y1 = Math.max(y0 + 1, Math.min(img.h, Math.ceil((gy + 1) * cellH)))
+
+    for (let gx = 0; gx < outW; gx++) {
+      const x0 = Math.floor(gx * cellW)
+      const x1 = Math.max(x0 + 1, Math.min(img.w, Math.ceil((gx + 1) * cellW)))
+      const cell = collectCell(img, lap, x0, y0, x1, y1, cfg, faceBox)
+      const di = getIdx(gx, gy, outW)
+
+      flat[di] = cell.baseColor.r
+      flat[di + 1] = cell.baseColor.g
+      flat[di + 2] = cell.baseColor.b
+      flat[di + 3] = cell.baseColor.a
+
+      line[di] = cell.lineColor.r
+      line[di + 1] = cell.lineColor.g
+      line[di + 2] = cell.lineColor.b
+      line[di + 3] = cell.lineColor.a
+
+      highlight[di] = cell.highlightColor.r
+      highlight[di + 1] = cell.highlightColor.g
+      highlight[di + 2] = cell.highlightColor.b
+      highlight[di + 3] = cell.highlightColor.a
+    }
+  }
+
+  return {
+    flat: { data: flat, w: outW, h: outH },
+    line: { data: line, w: outW, h: outH },
+    highlight: { data: highlight, w: outW, h: outH },
+  }
+}
+function composeLayers(flat, line, highlight, lineStrength, highlightStrength) {
+  const out = new Uint8ClampedArray(flat.length)
+  for (let i = 0; i < flat.length; i += 4) {
+    const a = flat[i + 3]
+    if (a < 8) {
+      out[i + 3] = 0
+      continue
+    }
+
+    const la = (line[i + 3] / 255) * lineStrength
+    let r = flat[i]
+    let g = flat[i + 1]
+    let b = flat[i + 2]
+
+    if (la > 0) {
+      const mr = multiplyOne(r, line[i] || 255)
+      const mg = multiplyOne(g, line[i + 1] || 255)
+      const mb = multiplyOne(b, line[i + 2] || 255)
+      r = Math.round(r * (1 - la) + mr * la)
+      g = Math.round(g * (1 - la) + mg * la)
+      b = Math.round(b * (1 - la) + mb * la)
+    }
+
+    const ha = (highlight[i + 3] / 255) * highlightStrength
+    if (ha > 0) {
+      const sr = screenOne(r, highlight[i] || 255)
+      const sg = screenOne(g, highlight[i + 1] || 255)
+      const sb = screenOne(b, highlight[i + 2] || 255)
+      r = Math.round(r * (1 - ha) + sr * ha)
+      g = Math.round(g * (1 - ha) + sg * ha)
+      b = Math.round(b * (1 - ha) + sb * ha)
+    }
+
+    out[i] = r
+    out[i + 1] = g
+    out[i + 2] = b
+    out[i + 3] = a
+  }
+  return out
+}
+function placeOnCanvas(img, canvasW, canvasH) {
+  const out = new Uint8ClampedArray(canvasW * canvasH * 4)
+  const ox = Math.floor((canvasW - img.w) / 2)
+  const oy = Math.floor((canvasH - img.h) / 2)
+
+  for (let y = 0; y < img.h; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const sx = x
+      const sy = y
+      const dx = x + ox
+      const dy = y + oy
+      if (dx < 0 || dy < 0 || dx >= canvasW || dy >= canvasH) continue
+      const si = getIdx(sx, sy, img.w)
+      const di = getIdx(dx, dy, canvasW)
+      out[di] = img.data[si]
+      out[di + 1] = img.data[si + 1]
+      out[di + 2] = img.data[si + 2]
+      out[di + 3] = img.data[si + 3]
+    }
+  }
+  return { data: out, w: canvasW, h: canvasH }
+}
+function solveOutputSize(srcW, srcH, cfg) {
+  if (cfg.outputMode === "canvas") {
+    const canvasW = Math.max(1, cfg.canvasW || 192)
+    const canvasH = Math.max(1, cfg.canvasH || 288)
+    let outW = canvasW
+    let outH = Math.round(srcH * (outW / srcW))
+    if (outH > canvasH) {
+      outH = canvasH
+      outW = Math.round(srcW * (outH / srcH))
+    }
+    return {
+      outW: Math.max(1, outW),
+      outH: Math.max(1, outH),
+      canvasW: canvasW,
+      canvasH: canvasH,
+    }
+  }
+
+  const outW = Math.max(1, cfg.targetWidth || 192)
+  const outH = Math.max(1, Math.round(srcH * (outW / srcW)))
+  return { outW, outH, canvasW: outW, canvasH: outH }
+}
+
+window.run = async function(inputB64, cfg) {
+  const src = await loadImage("data:image/png;base64," + inputB64)
+
+  const baseCanvas = createCanvas(src.width, src.height)
+  const baseCtx = baseCanvas.getContext("2d", { willReadFrequently: true })
+  baseCtx.imageSmoothingEnabled = false
+  baseCtx.drawImage(src, 0, 0)
+
+  const img = canvasToImageData(baseCanvas)
+  const faceBox = detectFaceBox(img, cfg.faceProtect || "very strong")
+  const solved = solveOutputSize(img.w, img.h, cfg)
+
+  const layers = buildSeparatedLayers(img, solved.outW, solved.outH, cfg, faceBox)
+  const composed = composeLayers(
+    layers.flat.data,
+    layers.line.data,
+    layers.highlight.data,
+    cfg.lineStrength || 0.78,
+    cfg.highlightStrength || 0.72
+  )
+
+  let finalImg = { data: composed, w: solved.outW, h: solved.outH }
+  if (cfg.outputMode === "canvas") {
+    finalImg = placeOnCanvas(finalImg, solved.canvasW, solved.canvasH)
+  }
+
+  const finalCanvas = imageDataToCanvas(finalImg.data, finalImg.w, finalImg.h)
+
+  return {
+    finalB64: finalCanvas.toDataURL("image/png").split(",")[1],
+    info: {
+      srcW: img.w,
+      srcH: img.h,
+      outW: finalImg.w,
+      outH: finalImg.h,
+      innerW: solved.outW,
+      innerH: solved.outH,
+      sampleMode: cfg.sampleMode,
+      faceProtect: cfg.faceProtect,
+      gamma: cfg.gamma,
+      lineStrength: cfg.lineStrength,
+      highlightStrength: cfg.highlightStrength,
+    }
+  }
+}
+</script>
+<script>async function fileToPngBase64(file){
+ const u=URL.createObjectURL(file);
+ try{
+ const img=new Image();await new Promise((ok,ng)=>{img.onload=ok;img.onerror=()=>ng(Error("画像を開けません"));img.src=u;});
+ const cv=document.createElement("canvas");cv.width=img.naturalWidth;cv.height=img.naturalHeight;
+ cv.getContext("2d").drawImage(img,0,0);
+ return cv.toDataURL("image/png").split(",")[1];
+ }finally{URL.revokeObjectURL(u);}
+}
+document.getElementById("convert").addEventListener("click",async()=>{
+ const files=[...document.getElementById("files").files],status=document.getElementById("status"),out=document.getElementById("output");
+ if(!files.length){status.textContent="画像を選択してください";return;}
+ out.replaceChildren();
+ const btn=document.getElementById("convert");btn.disabled=true;
+ const size=document.getElementById("canvasSize").value.split("x").map(Number);
+ const cfg={outputMode:document.getElementById("mode").value,canvasW:size[0],canvasH:size[1],targetWidth:Number(document.getElementById("width").value),sampleMode:document.getElementById("sample").value,faceProtect:document.getElementById("face").value,gamma:.94,lineStrength:.86,highlightStrength:.56};
+ try{
+ for(let i=0;i<files.length;i++){
+  const file=files[i];status.textContent=(i+1)+"/"+files.length+" 枚目を処理中: "+file.name;
+  try{
+   const b64=await fileToPngBase64(file),res=await window.run(b64,cfg);
+   const block=document.createElement("div");block.className="item";
+   const info=document.createElement("p");info.textContent=file.name+" — "+res.info.outW+"×"+res.info.outH;block.append(info);
+   const img=document.createElement("img");img.className="preview";img.alt="変換結果";img.src="data:image/png;base64,"+res.finalB64;block.append(img,document.createElement("div"));
+   const name=file.name.replace(/\.[^.]*$/,"")+"_pixel.png";
+   const a=document.createElement("a");a.textContent="PNGを保存: "+name;a.className="download";a.download=name;a.href=img.src;block.append(a);out.append(block);
+  }catch(e){const p=document.createElement("p");p.textContent=file.name+": "+String(e);out.append(p);}
+ }
+ status.textContent="処理が終了しました。各PNGの「保存」をタップしてください。";
+ }finally{btn.disabled=false;}
+});</script><script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});</script></body>
+</html>

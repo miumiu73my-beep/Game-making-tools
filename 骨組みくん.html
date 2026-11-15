@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0e1729">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>骨組みくん</title>
+<style>
+:root{
+  --bg:#07111d; --panel:#0f1b2c; --line:#294057; --text:#e7eef6; --muted:#9bb1c7; --accent:#38bdf8; --ok:#22c55e; --warn:#f43f5e;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:linear-gradient(180deg,#07111d,#0b1624);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+body{padding:12px}
+.app{display:grid;gap:12px;max-width:1200px;margin:0 auto}
+.panel{background:rgba(15,27,44,.96);border:1px solid rgba(155,177,199,.16);border-radius:14px;overflow:hidden}
+.panel h2{margin:0;padding:12px 14px;font-size:15px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(155,177,199,.12)}
+.panel-body{padding:12px;display:grid;gap:10px}
+.row{display:grid;gap:10px}
+.row.two{grid-template-columns:1fr 1fr}
+.row.three{grid-template-columns:repeat(3,1fr)}
+.row.four{grid-template-columns:repeat(4,1fr)}
+label{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+input,select,textarea,button{font:inherit;color:var(--text);background:#0a1421;border:1px solid #314a62;border-radius:10px;padding:10px 12px;min-height:42px}
+textarea{min-height:240px;resize:vertical;white-space:pre-wrap}
+button{cursor:pointer;font-weight:700;background:#17304b}
+button.primary{background:linear-gradient(180deg,#0ea5e9,#0284c7);border-color:transparent}
+button.good{background:linear-gradient(180deg,#16a34a,#15803d);border-color:transparent}
+button.warn{background:linear-gradient(180deg,#e11d48,#be123c);border-color:transparent}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+.canvas-shell{border:1px solid rgba(155,177,199,.16);border-radius:12px;background:#0a1421;padding:10px;overflow:auto;max-height:72vh;-webkit-overflow-scrolling:touch}
+.canvas-stage{position:relative;min-width:100%;display:flex;justify-content:center;align-items:flex-start}
+canvas{display:block;width:720px;height:980px;max-width:none;background:#fff;border-radius:8px;border:1px solid #314a62;touch-action:auto;flex:none}
+.status{display:flex;flex-wrap:wrap;gap:8px}
+.zoombar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;background:rgba(56,189,248,.10);border:1px solid rgba(56,189,248,.24)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.hint{font-size:12px;line-height:1.5;color:var(--muted)}
+@media (max-width:900px){.row.two,.row.three,.row.four{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <h2>入力</h2>
+    <div class="panel-body">
+      <div class="row four">
+        <label>保存名<input id="fileName" value="honegumi_rough"></label>
+        <label>頭身<input id="heads" type="number" min="2" max="10" step="0.5" value="7"></label>
+        <label>等身タイプ
+          <select id="bodyType">
+            <option value="chibi">ちび</option>
+            <option value="standard" selected>標準</option>
+            <option value="slim">細身</option>
+          </select>
+        </label>
+        <label>性別寄りの印象
+          <select id="genderTone">
+            <option value="neutral" selected>中立</option>
+            <option value="soft">やわらかめ</option>
+            <option value="masculine">骨太寄り</option>
+          </select>
+        </label>
+      </div>
+      <div class="row four">
+        <label>肩幅<input id="shoulder" type="range" min="0.7" max="1.5" step="0.01" value="1.0"></label>
+        <label>胴の長さ<input id="torso" type="range" min="0.7" max="1.5" step="0.01" value="1.0"></label>
+        <label>腰幅<input id="hip" type="range" min="0.7" max="1.5" step="0.01" value="1.0"></label>
+        <label>髪ボリューム<input id="hair" type="range" min="0" max="1.2" step="0.01" value="0.35"></label>
+      </div>
+      <div class="row three">
+        <label>髪の長さ<input id="hairLength" type="range" min="0" max="2.2" step="0.01" value="0.15"></label>
+        <label>髪の種類
+          <select id="hairMode">
+            <option value="normal" selected>通常</option>
+            <option value="bald">スキンヘッド</option>
+          </select>
+        </label>
+        <div class="hint" style="align-self:end">髪ボリュームは横や上のふくらみ、髪の長さは下へ伸びる量です。スキンヘッドにすると髪ガイドを完全に消します。</div>
+      </div>
+      <div class="row four">
+        <label>腕の長さ<input id="arm" type="range" min="0.7" max="1.5" step="0.01" value="1.0"></label>
+        <label>脚の長さ<input id="leg" type="range" min="0.7" max="1.5" step="0.01" value="1.0"></label>
+        <label>顔の向き
+          <select id="faceDir">
+            <option value="front" selected>正面</option>
+            <option value="left15">左15°</option>
+            <option value="left30">左30°</option>
+            <option value="right15">右15°</option>
+            <option value="right30">右30°</option>
+          </select>
+        </label>
+        <label>立ちポーズ
+          <select id="pose">
+            <option value="neutral" selected>直立</option>
+            <option value="contrapposto">コントラポスト</option>
+            <option value="hero">ヒーロー立ち</option>
+            <option value="walk">歩き出し</option>
+            <option value="salute">片手上げ</option>
+          </select>
+        </label>
+      </div>
+      <div class="row three">
+        <label>左右対称補助
+          <select id="symmetry">
+            <option value="on" selected>表示する</option>
+            <option value="off">表示しない</option>
+          </select>
+        </label>
+        <label>出力形式
+          <select id="exportMode">
+            <option value="json" selected>座標テキスト(JSON)</option>
+            <option value="png">透過PNG</option>
+            <option value="both">両方</option>
+          </select>
+        </label>
+        <label>ガイド濃度<input id="alpha" type="range" min="0.2" max="1" step="0.05" value="1"></label>
+      </div>
+      <div class="toolbar">
+        <button id="generateBtn" class="primary">生成</button>
+        <button id="dragResetBtn">手足を戻す</button>
+        <button id="resetLeftArmBtn">左腕だけ戻す</button>
+        <button id="resetRightArmBtn">右腕だけ戻す</button>
+        <button id="resetLeftLegBtn">左脚だけ戻す</button>
+        <button id="resetRightLegBtn">右脚だけ戻す</button>
+        <button id="loadBtn">txt読込</button>
+        <button id="saveBtn" class="good">保存</button>
+        <button id="copyBtn">座標をコピー</button>
+        <button id="resetBtn" class="warn">初期化</button>
+      </div>
+      <div class="hint">白い丸をドラッグすると、肩・肘・手首・腰・膝・足首・つま先を自由に動かせます。左右はキャラ基準です。左腕だけ、右脚だけのように部位ごとに初期姿勢へ戻せます。txt読込で以前保存した座標を復元できます。生成を押すと現在の入力値から姿勢を作り直します。</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>プレビュー</h2>
+    <div class="panel-body">
+      <div class="status">
+        <span id="statusPill" class="pill">準備OK</span>
+        <span id="sizePill" class="pill">-</span>
+        <span id="zoomPill" class="pill">表示 100%</span>
+      </div>
+      <div class="zoombar">
+        <button id="zoomOutBtn">縮小</button>
+        <button id="zoomFitBtn">全身表示</button>
+        <button id="zoomInBtn">拡大</button>
+        <label style="min-width:220px;flex:1">拡大率
+          <input id="zoomRange" type="range" min="1" max="4" step="0.25" value="1">
+        </label>
+      </div>
+      <div id="canvasShell" class="canvas-shell"><div class="canvas-stage"><canvas id="canvas" width="720" height="980"></canvas></div></div>
+      <div class="hint">全身表示を基準に、必要な時だけ拡大できます。関節の白丸をそのまま指で動かせます。</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>座標テキスト</h2>
+    <div class="panel-body">
+      <textarea id="output" class="mono"></textarea>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = function(id){ return document.getElementById(id); };
+  const els = {
+    fileName:$("fileName"), heads:$("heads"), bodyType:$("bodyType"), genderTone:$("genderTone"),
+    shoulder:$("shoulder"), torso:$("torso"), hip:$("hip"), hair:$("hair"), hairLength:$("hairLength"), hairMode:$("hairMode"), arm:$("arm"), leg:$("leg"),
+    faceDir:$("faceDir"), pose:$("pose"), symmetry:$("symmetry"), exportMode:$("exportMode"), alpha:$("alpha"),
+    generateBtn:$("generateBtn"), dragResetBtn:$("dragResetBtn"),
+    resetLeftArmBtn:$("resetLeftArmBtn"), resetRightArmBtn:$("resetRightArmBtn"), resetLeftLegBtn:$("resetLeftLegBtn"), resetRightLegBtn:$("resetRightLegBtn"),
+    loadBtn:$("loadBtn"), saveBtn:$("saveBtn"), copyBtn:$("copyBtn"), resetBtn:$("resetBtn"),
+    canvasShell:$("canvasShell"), canvas:$("canvas"), output:$("output"), statusPill:$("statusPill"), sizePill:$("sizePill"),
+    zoomOutBtn:$("zoomOutBtn"), zoomFitBtn:$("zoomFitBtn"), zoomInBtn:$("zoomInBtn"), zoomRange:$("zoomRange"), zoomPill:$("zoomPill")
+  };
+  const ctx = els.canvas.getContext("2d");
+  const state = { data:null, customPose:null, drag:null, viewZoom:1 };
+
+  window.appBridge = {
+    _queue: [],
+    popNativeMessage(){ return this._queue.shift() || null; },
+    onNativeResult(payload){
+      const ok = payload && payload.ok;
+      if (payload && payload.loadedText) {
+        importLoadedText(payload.loadedText, payload.fileName || "");
+        return;
+      }
+      setStatus(payload && payload.message ? payload.message : (ok ? "保存しました" : "失敗"), ok ? "ok" : "warn");
+    }
+  };
+  window.__SCRIPTABLE_NATIVE__ = !!window.__SCRIPTABLE_NATIVE__;
+
+  function queueNative(action,payload){
+ payload=payload||{};
+ if(action==="save-file"||action==="save-both"){
+  const files=action==="save-file"?[payload]:payload.files||[];
+  for(const file of files){const raw=atob(file.base64||"");const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+   const blob=new Blob([bytes],{type:file.fileName.endsWith(".png")?"image/png":"text/plain;charset=utf-8"});const a=document.createElement("a");
+   a.href=URL.createObjectURL(blob);a.download=String(file.fileName||"bone.txt").replace(/[\/\\:*?"<>|]/g,"_");document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  }
+  setStatus("ファイルをダウンロードしました。複数保存が制限される場合は形式を分けて保存してください。","ok");
+  return;
+ }
+ if(action==="pick-load-text"){
+  const pick=document.createElement("input");pick.type="file";pick.accept=".txt,.json,text/plain,application/json";
+  pick.onchange=async()=>{const file=pick.files&&pick.files[0];if(file)window.appBridge.onNativeResult({ok:true,loadedText:await file.text(),fileName:file.name});};
+  pick.click();return;
+ }
+ setStatus("未対応の操作: "+action,"warn");
+}
+function setStatus(text, tone){
+    els.statusPill.textContent = text;
+    let bg = "rgba(56,189,248,.10)", bd = "rgba(56,189,248,.24)";
+    if (tone === "ok"){ bg = "rgba(34,197,94,.10)"; bd = "rgba(34,197,94,.24)"; }
+    if (tone === "warn"){ bg = "rgba(244,63,94,.10)"; bd = "rgba(244,63,94,.24)"; }
+    els.statusPill.style.background = bg;
+    els.statusPill.style.borderColor = bd;
+  }
+
+  function num(id){ return parseFloat(els[id].value); }
+  function round(v){ return Math.round(v * 10) / 10; }
+  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+  function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
+  function copyPoint(p){ return { x: round(p.x), y: round(p.y) }; }
+  function safeNum(value, fallback){
+    const n = typeof value === "number" ? value : parseFloat(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function getFitScale(){
+    const shellWidth = Math.max(240, (els.canvasShell ? els.canvasShell.clientWidth : els.canvas.width) - 20);
+    return Math.min(1, shellWidth / els.canvas.width);
+  }
+
+  function applyCanvasScale(){
+    const fitScale = getFitScale();
+    const displayScale = fitScale * state.viewZoom;
+    const width = Math.round(els.canvas.width * displayScale);
+    const height = Math.round(els.canvas.height * displayScale);
+    els.canvas.style.width = width + "px";
+    els.canvas.style.height = height + "px";
+    els.zoomRange.value = String(state.viewZoom);
+    els.zoomPill.textContent = "表示 " + Math.round(state.viewZoom * 100) + "%";
+  }
+
+  function setZoom(nextZoom){
+    state.viewZoom = round(clamp(nextZoom, 1, 4));
+    applyCanvasScale();
+  }
+
+  function readInputs(){
+    return {
+      fileName: String(els.fileName.value || "honegumi_rough").trim() || "honegumi_rough",
+      heads: num("heads"),
+      bodyType: els.bodyType.value,
+      genderTone: els.genderTone.value,
+      shoulder: num("shoulder"),
+      torso: num("torso"),
+      hip: num("hip"),
+      hair: num("hair"),
+      hairLength: num("hairLength"),
+      hairMode: els.hairMode.value,
+      arm: num("arm"),
+      leg: num("leg"),
+      faceDir: els.faceDir.value,
+      pose: els.pose.value,
+      symmetry: els.symmetry.value === "on",
+      alpha: num("alpha"),
+      exportMode: els.exportMode.value
+    };
+  }
+
+  function rect(x,y,w,h){
+    return {
+      x: round(x), y: round(y), width: round(w), height: round(h),
+      points: [
+        { x: round(x), y: round(y) },
+        { x: round(x + w), y: round(y) },
+        { x: round(x + w), y: round(y + h) },
+        { x: round(x), y: round(y + h) }
+      ]
+    };
+  }
+
+  function faceOffset(dir){
+    if (dir === "left15") return -0.22;
+    if (dir === "left30") return -0.42;
+    if (dir === "right15") return 0.22;
+    if (dir === "right30") return 0.42;
+    return 0;
+  }
+
+  function poseAngles(name){
+    const map = {
+      neutral: {
+        shoulderLeftY:0, shoulderRightY:0, hipLeftY:0, hipRightY:0,
+        armLeftUpper:112, armLeftLower:100, armRightUpper:68, armRightLower:80,
+        legLeftUpper:92, legLeftLower:90, legRightUpper:88, legRightLower:90,
+        footLeft:180, footRight:0
+      },
+      contrapposto: {
+        shoulderLeftY:-8, shoulderRightY:6, hipLeftY:10, hipRightY:-10,
+        armLeftUpper:118, armLeftLower:98, armRightUpper:60, armRightLower:84,
+        legLeftUpper:98, legLeftLower:92, legRightUpper:82, legRightLower:88,
+        footLeft:185, footRight:-8
+      },
+      hero: {
+        shoulderLeftY:2, shoulderRightY:2, hipLeftY:0, hipRightY:0,
+        armLeftUpper:138, armLeftLower:138, armRightUpper:42, armRightLower:42,
+        legLeftUpper:98, legLeftLower:92, legRightUpper:82, legRightLower:88,
+        footLeft:190, footRight:-10
+      },
+      walk: {
+        shoulderLeftY:-6, shoulderRightY:6, hipLeftY:-8, hipRightY:8,
+        armLeftUpper:132, armLeftLower:110, armRightUpper:38, armRightLower:68,
+        legLeftUpper:70, legLeftLower:110, legRightUpper:110, legRightLower:78,
+        footLeft:172, footRight:10
+      },
+      salute: {
+        shoulderLeftY:0, shoulderRightY:-12, hipLeftY:0, hipRightY:0,
+        armLeftUpper:112, armLeftLower:98, armRightUpper:-20, armRightLower:-40,
+        legLeftUpper:92, legLeftLower:90, legRightUpper:88, legRightLower:90,
+        footLeft:180, footRight:0
+      }
+    };
+    return map[name] || map.neutral;
+  }
+
+  function pointPolar(origin, length, degree){
+    const rad = degree * Math.PI / 180;
+    return {
+      x: round(origin.x + Math.cos(rad) * length),
+      y: round(origin.y + Math.sin(rad) * length)
+    };
+  }
+
+  function makeLimb(start, len1, len2, deg1, deg2){
+    const elbow = pointPolar(start, len1, deg1);
+    const wrist = pointPolar(elbow, len2, deg2);
+    return { elbow, wrist };
+  }
+
+  function footFromAnkle(ankle, degree, len){
+    const toe = pointPolar(ankle, len, degree);
+    return { ankle: copyPoint(ankle), toe: toe };
+  }
+
+  function mirrorPoint(p, cx){ return { x: round(cx + (cx - p.x)), y: round(p.y) }; }
+
+  function buildSymmetryMirrorFromData(data){
+    const cx = data.canvas.width / 2;
+    return {
+      armGhostFromLeft: data.armLines.left.map(function(p){ return mirrorPoint(p, cx); }),
+      armGhostFromRight: data.armLines.right.map(function(p){ return mirrorPoint(p, cx); }),
+      legGhostFromLeft: data.legLines.left.map(function(p){ return mirrorPoint(p, cx); }),
+      legGhostFromRight: data.legLines.right.map(function(p){ return mirrorPoint(p, cx); })
+    };
+  }
+
+  function normalizeLine(points){
+    return points.map(function(p){ return copyPoint(p); });
+  }
+
+  function applyCustomPose(data, customPose){
+    if (!customPose) return finalizeData(data);
+    if (customPose.armLines && customPose.armLines.left) data.armLines.left = normalizeLine(customPose.armLines.left);
+    if (customPose.armLines && customPose.armLines.right) data.armLines.right = normalizeLine(customPose.armLines.right);
+    if (customPose.legLines && customPose.legLines.left) data.legLines.left = normalizeLine(customPose.legLines.left);
+    if (customPose.legLines && customPose.legLines.right) data.legLines.right = normalizeLine(customPose.legLines.right);
+    if (customPose.feet && customPose.feet.left && customPose.feet.left.toe) data.feet.left.toe = copyPoint(customPose.feet.left.toe);
+    if (customPose.feet && customPose.feet.right && customPose.feet.right.toe) data.feet.right.toe = copyPoint(customPose.feet.right.toe);
+    data.feet.left.ankle = copyPoint(data.legLines.left[2]);
+    data.feet.right.ankle = copyPoint(data.legLines.right[2]);
+    return finalizeData(data);
+  }
+
+  function finalizeData(data){
+    data.armLines.left = normalizeLine(data.armLines.left);
+    data.armLines.right = normalizeLine(data.armLines.right);
+    data.legLines.left = normalizeLine(data.legLines.left);
+    data.legLines.right = normalizeLine(data.legLines.right);
+    data.feet.left = { ankle: copyPoint(data.legLines.left[2]), toe: copyPoint(data.feet.left.toe) };
+    data.feet.right = { ankle: copyPoint(data.legLines.right[2]), toe: copyPoint(data.feet.right.toe) };
+    data.shoulderLine = {
+      x1: data.armLines.left[0].x, y1: data.armLines.left[0].y,
+      x2: data.armLines.right[0].x, y2: data.armLines.right[0].y
+    };
+    data.symmetryMirror = data.meta.symmetry ? buildSymmetryMirrorFromData(data) : null;
+    data.handlePoints = buildHandlePoints(data);
+    data.meta.directDrag = true;
+    return data;
+  }
+
+  function buildSkeleton(input, customPose){
+    const W = els.canvas.width, H = els.canvas.height;
+    const cx = W / 2;
+    const top = 70;
+    const baseScale = Math.min(108, (H - 160) / Math.max(2, input.heads));
+    const typeMul = input.bodyType === "chibi" ? 0.82 : (input.bodyType === "slim" ? 0.94 : 1.0);
+    const toneShoulder = input.genderTone === "masculine" ? 1.08 : (input.genderTone === "soft" ? 0.93 : 1.0);
+    const toneHip = input.genderTone === "soft" ? 1.08 : (input.genderTone === "masculine" ? 0.95 : 1.0);
+
+    const headH = baseScale * (input.bodyType === "chibi" ? 1.25 : 1.0);
+    const headW = headH * (input.genderTone === "soft" ? 0.88 : 0.92);
+    const headX = cx - headW / 2 + faceOffset(input.faceDir) * 12;
+    const jaw = { x: cx + faceOffset(input.faceDir) * 10, y: top + headH * 0.92 };
+
+    const neckY = top + headH + 10;
+    const shoulderY = neckY + 10;
+    const shoulderHalf = headW * 0.80 * input.shoulder * toneShoulder * (input.bodyType === "slim" ? 0.92 : 1.0);
+    const ribW = headW * 1.22 * input.shoulder * toneShoulder * typeMul;
+    const ribH = headH * 1.55 * input.torso;
+    const ribTop = shoulderY + 10;
+    const pelvisW = headW * 1.02 * input.hip * toneHip * typeMul;
+    const pelvisH = headH * 0.85;
+    const pelvisTop = ribTop + ribH + 14;
+    const crotchY = pelvisTop + pelvisH * 0.80;
+
+    const armBase = headH * 1.85 * input.arm;
+    const upperArm = armBase * 0.52;
+    const foreArm = armBase * 0.48;
+    const legBase = headH * 2.45 * input.leg;
+    const thigh = legBase * 0.53;
+    const shin = legBase * 0.47;
+
+    const pose = poseAngles(input.pose);
+    const shoulderLeft = { x: round(cx - shoulderHalf), y: round(shoulderY + pose.shoulderLeftY) };
+    const shoulderRight = { x: round(cx + shoulderHalf), y: round(shoulderY + pose.shoulderRightY) };
+    const hipLeft = { x: round(cx - pelvisW * 0.34), y: round(crotchY + pose.hipLeftY) };
+    const hipRight = { x: round(cx + pelvisW * 0.34), y: round(crotchY + pose.hipRightY) };
+
+    const armLeft = makeLimb(shoulderLeft, upperArm, foreArm, pose.armLeftUpper, pose.armLeftLower);
+    const armRight = makeLimb(shoulderRight, upperArm, foreArm, pose.armRightUpper, pose.armRightLower);
+    const legLeft = makeLimb(hipLeft, thigh, shin, pose.legLeftUpper, pose.legLeftLower);
+    const legRight = makeLimb(hipRight, thigh, shin, pose.legRightUpper, pose.legRightLower);
+
+    const footLeft = footFromAnkle(legLeft.wrist, pose.footLeft, headW * 0.38);
+    const footRight = footFromAnkle(legRight.wrist, pose.footRight, headW * 0.38);
+
+    const hairMode = input.hairMode === "bald" ? "bald" : "normal";
+    const hairLen = safeNum(input.hairLength, 0.15);
+    const hairPad = headW * (0.16 + input.hair * 0.38);
+    const hairHeight = headH * (0.18 + input.hair * 0.34);
+    const hairDropSide = headH * (0.10 + hairLen * 0.72);
+    const hairDropCenter = headH * (0.16 + hairLen * 0.94);
+    const hairOutline = hairMode === "bald" ? [] : [
+      { x: headX - hairPad, y: top + 12 },
+      { x: headX - hairPad * 0.92, y: top - hairHeight },
+      { x: cx, y: top - hairHeight * (1.08 + input.hair * 0.12) },
+      { x: headX + headW + hairPad * 0.92, y: top - hairHeight },
+      { x: headX + headW + hairPad, y: top + 12 },
+      { x: headX + headW + hairPad * 0.80, y: top + headH * (0.64 + input.hair * 0.10) + hairDropSide },
+      { x: cx + headW * 0.24, y: top + headH * (0.92 + input.hair * 0.08) + hairDropCenter * 0.92 },
+      { x: cx, y: top + headH * (0.96 + input.hair * 0.10) + hairDropCenter },
+      { x: cx - headW * 0.24, y: top + headH * (0.92 + input.hair * 0.08) + hairDropCenter * 0.92 },
+      { x: headX - hairPad * 0.80, y: top + headH * (0.64 + input.hair * 0.10) + hairDropSide }
+    ];
+    input.hairMode = hairMode;
+
+    const data = {
+      meta: input,
+      canvas: { width: W, height: H },
+      centerLine: { x1: cx, y1: 36, x2: cx, y2: H - 36 },
+      headBox: rect(headX, top, headW, headH),
+      jawPosition: jaw,
+      shoulderLine: { x1: shoulderLeft.x, y1: shoulderLeft.y, x2: shoulderRight.x, y2: shoulderRight.y },
+      ribcageBox: rect(cx - ribW/2, ribTop, ribW, ribH),
+      pelvisBox: rect(cx - pelvisW/2, pelvisTop, pelvisW, pelvisH),
+      armLines: {
+        left: [shoulderLeft, armLeft.elbow, armLeft.wrist],
+        right: [shoulderRight, armRight.elbow, armRight.wrist]
+      },
+      legLines: {
+        left: [hipLeft, legLeft.elbow, legLeft.wrist],
+        right: [hipRight, legRight.elbow, legRight.wrist]
+      },
+      feet: { left: footLeft, right: footRight },
+      hairOutline: hairOutline,
+      symmetryMirror: null,
+      handlePoints: []
+    };
+    return applyCustomPose(data, customPose);
+  }
+
+  function buildHandlePoints(data){
+    return [
+      { key:"arm.left.0", label:"肩右", point:copyPoint(data.armLines.left[0]), tone:"#ef4444" },
+      { key:"arm.left.1", label:"肘右", point:copyPoint(data.armLines.left[1]), tone:"#ef4444" },
+      { key:"arm.left.2", label:"手右", point:copyPoint(data.armLines.left[2]), tone:"#ef4444" },
+      { key:"arm.right.0", label:"肩左", point:copyPoint(data.armLines.right[0]), tone:"#ef4444" },
+      { key:"arm.right.1", label:"肘左", point:copyPoint(data.armLines.right[1]), tone:"#ef4444" },
+      { key:"arm.right.2", label:"手左", point:copyPoint(data.armLines.right[2]), tone:"#ef4444" },
+      { key:"leg.left.0", label:"腰右", point:copyPoint(data.legLines.left[0]), tone:"#f59e0b" },
+      { key:"leg.left.1", label:"膝右", point:copyPoint(data.legLines.left[1]), tone:"#f59e0b" },
+      { key:"leg.left.2", label:"足右", point:copyPoint(data.legLines.left[2]), tone:"#f59e0b" },
+      { key:"leg.right.0", label:"腰左", point:copyPoint(data.legLines.right[0]), tone:"#f59e0b" },
+      { key:"leg.right.1", label:"膝左", point:copyPoint(data.legLines.right[1]), tone:"#f59e0b" },
+      { key:"leg.right.2", label:"足左", point:copyPoint(data.legLines.right[2]), tone:"#f59e0b" },
+      { key:"toe.left", label:"先右", point:copyPoint(data.feet.left.toe), tone:"#b45309" },
+      { key:"toe.right", label:"先左", point:copyPoint(data.feet.right.toe), tone:"#b45309" }
+    ];
+  }
+
+  function draw(data){
+    const W = els.canvas.width, H = els.canvas.height;
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.clearRect(0,0,W,H);
+
+    drawCenterLine(data.centerLine);
+    drawBox(data.headBox, "#0f172a", 3);
+    drawJaw(data.jawPosition);
+    drawLineObj(data.shoulderLine, "#1d4ed8", 3);
+    drawBox(data.ribcageBox, "#16a34a", 3);
+    drawBox(data.pelvisBox, "#9333ea", 3);
+    drawPolyline(data.armLines.left, "#ef4444", 3);
+    drawPolyline(data.armLines.right, "#ef4444", 3);
+    drawPolyline(data.legLines.left, "#f59e0b", 3);
+    drawPolyline(data.legLines.right, "#f59e0b", 3);
+    drawFoot(data.feet.left);
+    drawFoot(data.feet.right);
+    if (data.hairOutline && data.hairOutline.length >= 3) drawPolygon(data.hairOutline, "#06b6d4", 3);
+
+    if (data.symmetryMirror) {
+      ctx.save();
+      ctx.setLineDash([10,8]);
+      ctx.globalAlpha = 0.35;
+      drawPolyline(data.symmetryMirror.armGhostFromLeft, "#ef4444", 2);
+      drawPolyline(data.symmetryMirror.armGhostFromRight, "#ef4444", 2);
+      drawPolyline(data.symmetryMirror.legGhostFromLeft, "#f59e0b", 2);
+      drawPolyline(data.symmetryMirror.legGhostFromRight, "#f59e0b", 2);
+      ctx.restore();
+    }
+
+    drawHeadsGuide(data.meta, data.canvas.width / 2);
+    drawHandles(data);
+    ctx.restore();
+    els.sizePill.textContent = "頭身 " + data.meta.heads + " / pose " + data.meta.pose + " / 関節ドラッグ可";
+  }
+
+  function drawHeadsGuide(meta, cx){
+    const top = 70;
+    const baseScale = Math.min(108, (els.canvas.height - 160) / Math.max(2, meta.heads));
+    const headH = baseScale * (meta.bodyType === "chibi" ? 1.25 : 1.0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(100,116,139,.45)";
+    ctx.setLineDash([6,6]);
+    for (let i = 0; i <= Math.floor(meta.heads); i++) {
+      const y = top + headH * i;
+      ctx.beginPath();
+      ctx.moveTo(cx - 170, y);
+      ctx.lineTo(cx + 170, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCenterLine(line){
+    ctx.save();
+    ctx.strokeStyle = "rgba(15,23,42,.35)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12,8]);
+    ctx.beginPath();
+    ctx.moveTo(line.x1, line.y1);
+    ctx.lineTo(line.x2, line.y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBox(box, color, width){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+    ctx.restore();
+  }
+
+  function drawJaw(p){
+    ctx.save();
+    ctx.fillStyle = "#111827";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLineObj(line, color, width){
+    drawPolyline([{x:line.x1,y:line.y1},{x:line.x2,y:line.y2}], color, width);
+  }
+
+  function drawPolyline(points, color, width){
+    if (!points || points.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = num("alpha");
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFoot(foot){
+    drawPolyline([foot.ankle, foot.toe], "#b45309", 3);
+  }
+
+  function drawPolygon(points, color, width){
+    if (!points || points.length < 3) return;
+    ctx.save();
+    ctx.globalAlpha = num("alpha");
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHandles(data){
+    if (!data.handlePoints) return;
+    for (let i = 0; i < data.handlePoints.length; i++) {
+      const handle = data.handlePoints[i];
+      const active = !!(state.drag && state.drag.key === handle.key);
+      const radius = active ? 8 : 6;
+      ctx.save();
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = handle.tone;
+      ctx.lineWidth = active ? 4 : 3;
+      ctx.beginPath();
+      ctx.arc(handle.point.x, handle.point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function clonePoseFromData(data){
+    return {
+      armLines: {
+        left: normalizeLine(data.armLines.left),
+        right: normalizeLine(data.armLines.right)
+      },
+      legLines: {
+        left: normalizeLine(data.legLines.left),
+        right: normalizeLine(data.legLines.right)
+      },
+      feet: {
+        left: { ankle: copyPoint(data.feet.left.ankle), toe: copyPoint(data.feet.left.toe) },
+        right: { ankle: copyPoint(data.feet.right.ankle), toe: copyPoint(data.feet.right.toe) }
+      }
+    };
+  }
+
+  function offsetPoint(point, dx, dy){
+    point.x = round(clamp(point.x + dx, 14, els.canvas.width - 14));
+    point.y = round(clamp(point.y + dy, 14, els.canvas.height - 14));
+  }
+
+  function moveChain(points, dx, dy){
+    for (let i = 0; i < points.length; i++) offsetPoint(points[i], dx, dy);
+  }
+
+  function applyDragDelta(customPose, key, dx, dy){
+    if (!customPose || !key) return;
+    if (key === "arm.left.0") { moveChain(customPose.armLines.left, dx, dy); return; }
+    if (key === "arm.left.1") { offsetPoint(customPose.armLines.left[1], dx, dy); return; }
+    if (key === "arm.left.2") { offsetPoint(customPose.armLines.left[2], dx, dy); return; }
+    if (key === "arm.right.0") { moveChain(customPose.armLines.right, dx, dy); return; }
+    if (key === "arm.right.1") { offsetPoint(customPose.armLines.right[1], dx, dy); return; }
+    if (key === "arm.right.2") { offsetPoint(customPose.armLines.right[2], dx, dy); return; }
+
+    if (key === "leg.left.0") {
+      moveChain(customPose.legLines.left, dx, dy);
+      offsetPoint(customPose.feet.left.toe, dx, dy);
+      return;
+    }
+    if (key === "leg.left.1") { offsetPoint(customPose.legLines.left[1], dx, dy); return; }
+    if (key === "leg.left.2") {
+      offsetPoint(customPose.legLines.left[2], dx, dy);
+      offsetPoint(customPose.feet.left.toe, dx, dy);
+      return;
+    }
+    if (key === "leg.right.0") {
+      moveChain(customPose.legLines.right, dx, dy);
+      offsetPoint(customPose.feet.right.toe, dx, dy);
+      return;
+    }
+    if (key === "leg.right.1") { offsetPoint(customPose.legLines.right[1], dx, dy); return; }
+    if (key === "leg.right.2") {
+      offsetPoint(customPose.legLines.right[2], dx, dy);
+      offsetPoint(customPose.feet.right.toe, dx, dy);
+      return;
+    }
+    if (key === "toe.left") { offsetPoint(customPose.feet.left.toe, dx, dy); return; }
+    if (key === "toe.right") { offsetPoint(customPose.feet.right.toe, dx, dy); return; }
+  }
+
+  function buildText(data){
+    const exportData = deepClone(data);
+    delete exportData.handlePoints;
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  function setInputValue(id, value){
+    if (!els[id] || value == null) return;
+    if (els[id].type === "range" || els[id].type === "number") {
+      els[id].value = String(value);
+      return;
+    }
+    els[id].value = String(value);
+  }
+
+  function applyMetaToInputs(meta){
+    if (!meta) return;
+    setInputValue("fileName", meta.fileName || els.fileName.value);
+    setInputValue("heads", safeNum(meta.heads, safeNum(els.heads.value, 7)));
+    setInputValue("bodyType", meta.bodyType || "standard");
+    setInputValue("genderTone", meta.genderTone || "neutral");
+    setInputValue("shoulder", safeNum(meta.shoulder, 1));
+    setInputValue("torso", safeNum(meta.torso, 1));
+    setInputValue("hip", safeNum(meta.hip, 1));
+    setInputValue("hair", safeNum(meta.hair, 0.35));
+    setInputValue("hairLength", safeNum(meta.hairLength, 0.15));
+    setInputValue("hairMode", meta.hairMode === "bald" ? "bald" : "normal");
+    setInputValue("arm", safeNum(meta.arm, 1));
+    setInputValue("leg", safeNum(meta.leg, 1));
+    setInputValue("faceDir", meta.faceDir || "front");
+    setInputValue("pose", meta.pose || "neutral");
+    setInputValue("symmetry", meta.symmetry === false ? "off" : "on");
+    setInputValue("alpha", safeNum(meta.alpha, safeNum(els.alpha.value, 1)));
+    if (meta.exportMode) setInputValue("exportMode", meta.exportMode);
+  }
+
+  function importDataObject(parsed, fileName){
+    if (!parsed || typeof parsed !== "object") throw new Error("JSON形式ではありません");
+    applyMetaToInputs(parsed.meta || {});
+    if (fileName) {
+      const cleanName = String(fileName).replace(/\.[^.]+$/, "");
+      if (cleanName) els.fileName.value = cleanName;
+    }
+    const rebuilt = buildSkeleton(readInputs(), null);
+    const customPose = clonePoseFromData(rebuilt);
+
+    if (parsed.armLines && parsed.armLines.left && parsed.armLines.left.length >= 3) customPose.armLines.left = normalizeLine(parsed.armLines.left.slice(0, 3));
+    if (parsed.armLines && parsed.armLines.right && parsed.armLines.right.length >= 3) customPose.armLines.right = normalizeLine(parsed.armLines.right.slice(0, 3));
+    if (parsed.legLines && parsed.legLines.left && parsed.legLines.left.length >= 3) customPose.legLines.left = normalizeLine(parsed.legLines.left.slice(0, 3));
+    if (parsed.legLines && parsed.legLines.right && parsed.legLines.right.length >= 3) customPose.legLines.right = normalizeLine(parsed.legLines.right.slice(0, 3));
+    if (parsed.feet && parsed.feet.left && parsed.feet.left.toe) customPose.feet.left.toe = copyPoint(parsed.feet.left.toe);
+    if (parsed.feet && parsed.feet.right && parsed.feet.right.toe) customPose.feet.right.toe = copyPoint(parsed.feet.right.toe);
+
+    state.customPose = customPose;
+    state.drag = null;
+    state.data = buildSkeleton(readInputs(), state.customPose);
+    renderCurrent("txtを読み込みました", "ok");
+  }
+
+  function importLoadedText(textValue, fileName){
+    try {
+      const parsed = JSON.parse(String(textValue || ""));
+      importDataObject(parsed, fileName || "");
+    } catch (error) {
+      setStatus("読み込み失敗: JSONを確認してください", "warn");
+    }
+  }
+
+  function loadTxtFile(){
+    queueNative("pick-load-text", {});
+  }
+
+  function renderCurrent(statusText, tone){
+    if (!state.data) return;
+    draw(state.data);
+    els.output.value = buildText(state.data);
+    if (statusText) setStatus(statusText, tone || "ok");
+  }
+
+  function generate(clearCustom){
+    if (clearCustom !== false) state.customPose = null;
+    state.data = buildSkeleton(readInputs(), state.customPose);
+    renderCurrent("生成しました", "ok");
+  }
+
+  function resetDraggedLimbs(){
+    state.customPose = null;
+    state.data = buildSkeleton(readInputs(), null);
+    renderCurrent("手足を初期姿勢に戻しました", "ok");
+  }
+
+  function resetPosePart(part){
+    const baseData = buildSkeleton(readInputs(), null);
+    const basePose = clonePoseFromData(baseData);
+    if (!state.customPose && state.data) state.customPose = clonePoseFromData(state.data);
+    if (!state.customPose) state.customPose = clonePoseFromData(baseData);
+
+    if (part === "leftArm") {
+      state.customPose.armLines.right = normalizeLine(basePose.armLines.right);
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent("左腕を初期姿勢に戻しました", "ok");
+      return;
+    }
+    if (part === "rightArm") {
+      state.customPose.armLines.left = normalizeLine(basePose.armLines.left);
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent("右腕を初期姿勢に戻しました", "ok");
+      return;
+    }
+    if (part === "leftLeg") {
+      state.customPose.legLines.right = normalizeLine(basePose.legLines.right);
+      state.customPose.feet.right.toe = copyPoint(basePose.feet.right.toe);
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent("左脚を初期姿勢に戻しました", "ok");
+      return;
+    }
+    if (part === "rightLeg") {
+      state.customPose.legLines.left = normalizeLine(basePose.legLines.left);
+      state.customPose.feet.left.toe = copyPoint(basePose.feet.left.toe);
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent("右脚を初期姿勢に戻しました", "ok");
+      return;
+    }
+    resetDraggedLimbs();
+  }
+
+  function dataUrlToBase64(dataUrl){
+    return String(dataUrl || "").split(",")[1] || "";
+  }
+
+  function save(){
+    if (!state.data) {
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent();
+    }
+    const mode = els.exportMode.value;
+    const baseName = String(els.fileName.value || "honegumi_rough").trim() || "honegumi_rough";
+    const txtBase64 = btoa(unescape(encodeURIComponent(els.output.value)));
+    const pngBase64 = dataUrlToBase64(els.canvas.toDataURL("image/png"));
+    if (mode === "json") {
+      queueNative("save-file", { fileName: baseName + ".txt", base64: txtBase64 });
+      return;
+    }
+    if (mode === "png") {
+      queueNative("save-file", { fileName: baseName + ".png", base64: pngBase64 });
+      return;
+    }
+    queueNative("save-both", {
+      files: [
+        { fileName: baseName + ".txt", base64: txtBase64 },
+        { fileName: baseName + ".png", base64: pngBase64 }
+      ]
+    });
+  }
+
+  async function copyText(){
+    if (!els.output.value) generate(false);
+    try {
+      await navigator.clipboard.writeText(els.output.value);
+      setStatus("座標をコピーしました", "ok");
+    } catch (_) {
+      els.output.select();
+      document.execCommand("copy");
+      setStatus("座標をコピーしました", "ok");
+    }
+  }
+
+  function reset(){
+    els.fileName.value = "honegumi_rough";
+    els.heads.value = 7;
+    els.bodyType.value = "standard";
+    els.genderTone.value = "neutral";
+    els.shoulder.value = 1.0;
+    els.torso.value = 1.0;
+    els.hip.value = 1.0;
+    els.hair.value = 0.35;
+    els.hairLength.value = 0.15;
+    els.hairMode.value = "normal";
+    els.arm.value = 1.0;
+    els.leg.value = 1.0;
+    els.faceDir.value = "front";
+    els.pose.value = "neutral";
+    els.symmetry.value = "on";
+    els.exportMode.value = "json";
+    els.alpha.value = 1;
+    state.customPose = null;
+    state.drag = null;
+    state.viewZoom = 1;
+    generate(false);
+    applyCanvasScale();
+    setStatus("初期化しました", "ok");
+  }
+
+  function getCanvasPoint(event){
+    const source = event.touches && event.touches[0] ? event.touches[0] : (event.changedTouches && event.changedTouches[0] ? event.changedTouches[0] : event);
+    const rect = els.canvas.getBoundingClientRect();
+    return {
+      x: round((source.clientX - rect.left) * (els.canvas.width / rect.width)),
+      y: round((source.clientY - rect.top) * (els.canvas.height / rect.height))
+    };
+  }
+
+  function findNearestHandle(point){
+    if (!state.data || !state.data.handlePoints) return null;
+    let best = null;
+    for (let i = 0; i < state.data.handlePoints.length; i++) {
+      const handle = state.data.handlePoints[i];
+      const dx = handle.point.x - point.x;
+      const dy = handle.point.y - point.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= 26 && (!best || dist < best.dist)) {
+        best = { key: handle.key, label: handle.label, dist: dist };
+      }
+    }
+    return best;
+  }
+
+  function startDrag(event){
+    const point = getCanvasPoint(event);
+    const handle = findNearestHandle(point);
+    if (!handle) return;
+    event.preventDefault();
+    if (!state.customPose && state.data) state.customPose = clonePoseFromData(state.data);
+    state.drag = { key: handle.key, label: handle.label, last: point };
+    setStatus(handle.label + "をドラッグ中", "ok");
+    draw(state.data);
+  }
+
+  function moveDrag(event){
+    if (!state.drag || !state.customPose) return;
+    event.preventDefault();
+    const point = getCanvasPoint(event);
+    const dx = round(point.x - state.drag.last.x);
+    const dy = round(point.y - state.drag.last.y);
+    if (dx === 0 && dy === 0) return;
+    applyDragDelta(state.customPose, state.drag.key, dx, dy);
+    state.drag.last = point;
+    state.data = buildSkeleton(readInputs(), state.customPose);
+    renderCurrent();
+  }
+
+  function endDrag(event){
+    if (!state.drag) return;
+    if (event && event.preventDefault) event.preventDefault();
+    const label = state.drag.label;
+    state.drag = null;
+    renderCurrent(label + "を動かしました", "ok");
+  }
+
+  function rebuildFromInputs(){
+    state.customPose = null;
+    state.drag = null;
+    state.data = buildSkeleton(readInputs(), null);
+    renderCurrent("生成しました", "ok");
+  }
+
+  function redrawOnly(){
+    if (!state.data) {
+      state.data = buildSkeleton(readInputs(), state.customPose);
+      renderCurrent();
+      return;
+    }
+    state.data = buildSkeleton(readInputs(), state.customPose);
+    draw(state.data);
+    els.output.value = buildText(state.data);
+  }
+
+  els.generateBtn.addEventListener("click", rebuildFromInputs);
+  els.dragResetBtn.addEventListener("click", resetDraggedLimbs);
+  els.resetLeftArmBtn.addEventListener("click", function(){ resetPosePart("leftArm"); });
+  els.resetRightArmBtn.addEventListener("click", function(){ resetPosePart("rightArm"); });
+  els.resetLeftLegBtn.addEventListener("click", function(){ resetPosePart("leftLeg"); });
+  els.resetRightLegBtn.addEventListener("click", function(){ resetPosePart("rightLeg"); });
+  els.loadBtn.addEventListener("click", loadTxtFile);
+  els.saveBtn.addEventListener("click", save);
+  els.copyBtn.addEventListener("click", copyText);
+  els.resetBtn.addEventListener("click", reset);
+
+  ["heads","bodyType","genderTone","shoulder","torso","hip","hair","hairLength","hairMode","arm","leg","faceDir","pose"].forEach(function(id){
+    els[id].addEventListener("input", rebuildFromInputs);
+    els[id].addEventListener("change", rebuildFromInputs);
+  });
+  els.symmetry.addEventListener("input", redrawOnly);
+  els.symmetry.addEventListener("change", redrawOnly);
+  els.alpha.addEventListener("input", function(){ if (state.data) draw(state.data); });
+  els.alpha.addEventListener("change", function(){ if (state.data) draw(state.data); });
+
+  els.zoomOutBtn.addEventListener("click", function(){ setZoom(state.viewZoom - 0.25); });
+  els.zoomFitBtn.addEventListener("click", function(){ setZoom(1); });
+  els.zoomInBtn.addEventListener("click", function(){ setZoom(state.viewZoom + 0.25); });
+  els.zoomRange.addEventListener("input", function(){ setZoom(parseFloat(els.zoomRange.value)); });
+  els.zoomRange.addEventListener("change", function(){ setZoom(parseFloat(els.zoomRange.value)); });
+  window.addEventListener("resize", applyCanvasScale);
+
+  els.canvas.addEventListener("mousedown", startDrag);
+  window.addEventListener("mousemove", moveDrag);
+  window.addEventListener("mouseup", endDrag);
+  els.canvas.addEventListener("touchstart", startDrag, { passive:false });
+  window.addEventListener("touchmove", moveDrag, { passive:false });
+  window.addEventListener("touchend", endDrag, { passive:false });
+  window.addEventListener("touchcancel", endDrag, { passive:false });
+
+  generate(false);
+  applyCanvasScale();
+})();
+</script>
+<script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});</script></body>
+</html>

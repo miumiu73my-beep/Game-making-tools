@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head>
+<head><link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0e1729">
+<meta name="apple-mobile-web-app-capable" content="yes">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>グリッドペイント</title>
@@ -2135,5 +2138,5 @@ clear</div>
       init();
     })();
   </script>
-</body>
+<script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});</script></body>
 </html>
