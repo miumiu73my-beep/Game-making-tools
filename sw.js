@@ -1,9 +1,9 @@
-const CACHE='game-making-tools-pwa-v1';
+const CACHE='game-making-tools-pwa-v2';
 const ASSETS=[
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./icons/icon.svg",
+  "./icons/icon.svg","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png",
   "./browser-utils.js",
   "./pixel_grid_editor_v10_scriptable.html",
   "./%E8%89%B2%E5%A1%97%E3%82%8B%E5%90%9B.html",
