@@ -3,9 +3,20 @@
 const encoder=new TextEncoder();
 function safeName(v){return String(v||"file").replace(/[\/\\:*?"<>|\u0000-\u001f]/g,"_").trim()||"file";}
 function bytesFromBase64(text){const raw=atob(text);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;}
+let exportCounter=0;
+function uniqueExportName(filename){
+ const safe=safeName(filename);
+ const dot=safe.lastIndexOf(".");
+ const base=dot>0?safe.slice(0,dot):safe;
+ const ext=dot>0?safe.slice(dot):"";
+ const d=new Date();
+ const pad=(n,w=2)=>String(n).padStart(w,"0");
+ const stamp=String(d.getFullYear())+pad(d.getMonth()+1)+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+"-"+pad(d.getMilliseconds(),3);
+ return base+"_"+stamp+"_"+pad(++exportCounter,3)+ext;
+}
 function saveLink(container,filename,data,type){
  const blob=data instanceof Blob?data:new Blob([data],{type:type||"application/octet-stream"});
- const link=document.createElement("a");link.textContent="保存: "+filename;link.download=safeName(filename);link.href=URL.createObjectURL(blob);link.className="download";container.appendChild(link);return link;
+ const link=document.createElement("a");const outputName=uniqueExportName(filename);link.textContent="保存: "+outputName;link.download=outputName;link.href=URL.createObjectURL(blob);link.className="download";container.appendChild(link);return link;
 }
 function crc32(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^(c&1?0xedb88320:0);}return(c^0xffffffff)>>>0;}
 function zip(items){
@@ -23,5 +34,5 @@ function zip(items){
  const directory=join(central),end=join([u32(0x06054b50),u16(0),u16(0),u16(items.length),u16(items.length),u32(directory.length),u32(offset),u16(0)]);
  return new Blob([...chunks,directory,end],{type:"application/zip"});
 }
-window.PWAUtils={safeName,saveLink,zip,bytesFromBase64,encoder};
+window.PWAUtils={safeName,uniqueExportName,saveLink,zip,bytesFromBase64,encoder};
 })();

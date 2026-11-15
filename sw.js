@@ -1,5 +1,5 @@
 /* Service Worker is scoped to /Game-making-tools/ only. */
-const CACHE = "game-making-tools-pwa-v4";
+const CACHE = "game-making-tools-pwa-v5";
 const ASSETS = [
   "./",
   "./index.html",

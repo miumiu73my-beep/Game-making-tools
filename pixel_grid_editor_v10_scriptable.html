@@ -541,7 +541,7 @@ clear</div>
       <section class="panel">
         <div class="panel-header">4. 保存とメモ</div>
         <div class="panel-body stack">
-          <div class="footer-note">PNG は透過で保存します。PSD は 1 レイヤー相当のフラット書き出しです。<br>「PNG+PSDまとめて保存」は、対応端末では 2 つのファイルを同じ名前でまとめて共有できます。<br>対応端末では保存先選択を試し、非対応環境では共有シートまたは通常ダウンロードに切り替えます。<br>下のキャンバスは 2 本指のピンチイン / ピンチアウト、または倍率ボタンで拡大縮小できます。</div>
+          <div class="footer-note">PNG は透過で保存します。PSD は 1 レイヤー相当のフラット書き出しです。<br>「PNG+PSDまとめて保存」は、対応端末では 2 つのファイルを同じ名前でまとめて共有できます。<br>すべての書き出しは日時・連番付きの新しいファイルとしてダウンロードします（既存ファイルの直接上書きはしません）。PNG+PSDはZIPにまとめます。<br>下のキャンバスは 2 本指のピンチイン / ピンチアウト、または倍率ボタンで拡大縮小できます。</div>
         </div>
       </section>
     </div>
@@ -614,6 +614,7 @@ clear</div>
     </section>
   </div>
 
+  <script src="./browser-utils.js"></script>
   <script>
     (() => {
       const $ = (id) => document.getElementById(id);
@@ -1715,44 +1716,18 @@ clear</div>
       }
 
       async function saveBlob(blob, suggestedName) {
-        if (window.showSaveFilePicker && window.isSecureContext) {
-          try {
-            const handle = await window.showSaveFilePicker({
-              suggestedName,
-              types: [{
-                description: 'ファイル',
-                accept: { [blob.type || 'application/octet-stream']: [suggestedName.slice(suggestedName.lastIndexOf('.'))] }
-              }]
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return true;
-          } catch (error) {
-            if (error && error.name === 'AbortError') return false;
-          }
-        }
-
-        try {
-          const file = new File([blob], suggestedName, { type: blob.type || 'application/octet-stream' });
-          if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: suggestedName });
-            return true;
-          }
-        } catch (error) {
-          // fallback below
-        }
-
+        // ブラウザの既存ファイルハンドルを取得せず、毎回新規ダウンロードする。
+        const outputName = PWAUtils.uniqueExportName(suggestedName);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = suggestedName;
+        a.download = outputName;
         a.rel = 'noopener';
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1500);
-        return true;
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return outputName;
       }
 
       function getBaseFileName() {
@@ -1774,8 +1749,6 @@ clear</div>
           name,
           pngBlob,
           psdBlob,
-          pngFile: new File([pngBlob], `${name}.png`, { type: 'image/png' }),
-          psdFile: new File([psdBlob], `${name}.psd`, { type: 'application/octet-stream' }),
         };
       }
 
@@ -1783,7 +1756,7 @@ clear</div>
         try {
           const { name, pngBlob } = await createExportFiles();
           const saved = await saveBlob(pngBlob, `${name}.png`);
-          if (saved) setNotice(`PNG を ${name}.png で保存しました`, 'success');
+          if (saved) setNotice(`PNG を ${saved} として新規ダウンロードします`, 'success');
         } catch (error) {
           setNotice(error?.message || 'PNG の書き出しに失敗しました。', 'error');
         }
@@ -1793,7 +1766,7 @@ clear</div>
         try {
           const { name, psdBlob } = await createExportFiles();
           const saved = await saveBlob(psdBlob, `${name}.psd`);
-          if (saved) setNotice(`PSD を ${name}.psd で保存しました`, 'success');
+          if (saved) setNotice(`PSD を ${saved} として新規ダウンロードします`, 'success');
         } catch (error) {
           setNotice(error?.message || 'PSD の書き出しに失敗しました。', 'error');
         }
@@ -1801,26 +1774,13 @@ clear</div>
 
       async function saveBoth() {
         try {
-          const { name, pngBlob, psdBlob, pngFile, psdFile } = await createExportFiles();
-
-          try {
-            if (navigator.canShare && navigator.share && navigator.canShare({ files: [pngFile, psdFile] })) {
-              await navigator.share({
-                files: [pngFile, psdFile],
-                title: `${name} の書き出し`,
-              });
-              setNotice(`PNG と PSD をまとめて共有しました。「ファイルに保存」で ${name}.png / ${name}.psd のまま保存できます`, 'success');
-              return;
-            }
-          } catch (error) {
-            // fallback below
-          }
-
-          const pngSaved = await saveBlob(pngBlob, `${name}.png`);
-          const psdSaved = await saveBlob(psdBlob, `${name}.psd`);
-          if (pngSaved || psdSaved) {
-            setNotice(`PNG と PSD を順番に保存しました`, 'success');
-          }
+          const { name, pngBlob, psdBlob } = await createExportFiles();
+          const archive = PWAUtils.zip([
+            { name: `${name}.png`, data: new Uint8Array(await pngBlob.arrayBuffer()) },
+            { name: `${name}.psd`, data: new Uint8Array(await psdBlob.arrayBuffer()) }
+          ]);
+          const saved = await saveBlob(archive, `${name}_PNG-PSD.zip`);
+          if (saved) setNotice(`PNG と PSD を ${saved} にまとめて新規ダウンロードします`, 'success');
         } catch (error) {
           setNotice(error?.message || 'PNG / PSD のまとめ保存に失敗しました。', 'error');
         }

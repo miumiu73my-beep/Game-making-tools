@@ -612,6 +612,7 @@ meta project=CommonAssets category=characters resourceId=hero_face character=her
   </section>
 </div>
 
+<script src="./browser-utils.js"></script>
 <script>
 (function(){
   'use strict';
@@ -2445,7 +2446,7 @@ meta project=CommonAssets category=characters resourceId=hero_face character=her
   function downloadBlob(blob, filename){
     const url = URL.createObjectURL(blob);
     downloadAnchor.href = url;
-    downloadAnchor.download = filename;
+    downloadAnchor.download = PWAUtils.uniqueExportName(filename);
     downloadAnchor.click();
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
   }
@@ -2502,10 +2503,13 @@ function requestSave(kind){
           { kind:'psd', fileName:name + '.psd', base64:psdBase64 }
         ]});
       } else {
-        downloadBlob(dataURIToBlob(pngDataUrl), name + '.png');
-        downloadBlob(new Blob([Uint8Array.from(atob(psdBase64), function(ch){ return ch.charCodeAt(0); })], { type:'application/octet-stream' }), name + '.psd');
+        const archive = PWAUtils.zip([
+          {name:name + '.png',data:PWAUtils.bytesFromBase64(pngDataUrl.split(',')[1])},
+          {name:name + '.psd',data:PWAUtils.bytesFromBase64(psdBase64)}
+        ]);
+        downloadBlob(archive, name + '_PNG-PSD.zip');
       }
-      setNotice(canUseNativeBridge ? 'PNG+PSD保存を送信しました' : 'PNG+PSDをダウンロード保存します', 'accent');
+      setNotice(canUseNativeBridge ? 'PNG+PSD保存を送信しました' : 'PNG+PSDのZIPを新規ダウンロードします', 'accent');
     } catch (error) {
       const message = '保存準備でエラー: ' + String(error && error.message ? error.message : error);
       setNotice(message, 'error');

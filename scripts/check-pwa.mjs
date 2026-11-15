@@ -22,4 +22,22 @@ for (const file of ["browser-utils.js","pwa-nav.js"]) assert(worker.includes('".
 for (const shortcut of manifest.shortcuts || []) {
   assert(existsSync(decodeURIComponent(shortcut.url.replace(/^\.\//,""))), "Missing shortcut: " + shortcut.url);
 }
-console.log("Game-making-tools PWA: 8 browser tools, manifest, icons, launcher and offline cache verified.");
+
+// 保存方式の静的検査: HTML版では既存ファイルの書込みハンドルを取得しない。
+for (const file of htmlPages) {
+  const source = read(file);
+  assert(!source.includes("showSaveFilePicker"), "Direct write picker is prohibited: " + file);
+  assert(!source.includes("createWritable("), "Direct file overwrite is prohibited: " + file);
+}
+const utility = read("browser-utils.js");
+assert(utility.includes("uniqueExportName("), "Missing unique export-name helper");
+assert(utility.includes("link.download=outputName"), "Common export links must use unique names");
+for (const path of ["pixel_grid_editor_v10_scriptable.html", "色塗る君.html", "骨組みくん.html"]) {
+  const source = read(path);
+  assert(source.includes('src="./browser-utils.js"'), "Missing shared export-name helper in: " + path);
+  assert(source.includes("PWAUtils.uniqueExportName("), "Export must create a unique name: " + path);
+}
+assert(read("pixel_grid_editor_v10_scriptable.html").includes("PWAUtils.zip("), "Grid paint bundle should be ZIP");
+assert(read("色塗る君.html").includes("PWAUtils.zip("), "Coloring bundle should be ZIP");
+
+console.log("Game-making-tools PWA: 8 browser tools, installability, offline assets and new-file-only exports checked.");
