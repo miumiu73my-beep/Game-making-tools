@@ -27,5 +27,23 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "グリッドペイント",
+      "url": "./pixel_grid_editor_v10_scriptable.html"
+    },
+    {
+      "name": "色塗る君",
+      "url": "./%E8%89%B2%E5%A1%97%E3%82%8B%E5%90%9B.html"
+    },
+    {
+      "name": "骨組みくん",
+      "url": "./%E9%AA%A8%E7%B5%84%E3%81%BF%E3%81%8F%E3%82%93.html"
+    },
+    {
+      "name": "立ち絵ドット変換",
+      "url": "./%E7%AB%8B%E3%81%A1%E7%B5%B5-%E3%83%89%E3%83%83%E3%83%88%E5%A4%89%E6%8F%9B.html"
+    }
   ]
 }

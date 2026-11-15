@@ -32,3 +32,10 @@ SafariでURLを開いて **共有 → ホーム画面に追加**。初回読み�
 
 ## 更新方法
 Webファイルを変更するときは `sw.js` のCACHE名を新しいバージョンに変更し、Service Workerの旧キャッシュを更新してください。
+
+## 2026-11 PWA整備
+- 8本すべてのブラウザHTMLをオフライン用にキャッシュします。Scriptable原本の .js は未変更です。
+- ツール画面に一覧への戻り導線を用意しました（元からあるページは重複させません）。
+- 各ページからPWAを登録でき、iOSのホーム画面起動に対応します。
+- 静的構成チェックをGitHub Actions（`PWA static checks`）で自動実行します。ローカルなら `node scripts/check-pwa.mjs` です。
+- GitHub Pagesが無効な場合は上記のSettings → Pagesで有効化してください。実機でのファイル書き出し・読み込み検証は別途必要です。

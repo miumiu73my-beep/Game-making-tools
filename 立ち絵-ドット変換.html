@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="ja">
 <head><link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png"><meta charset="utf-8"><title>立ち絵ドット変換</title><link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0e1729">
@@ -19,6 +19,7 @@ a{color:#a6defa}#result:not(:empty){margin-top:16px}</style>
 html, body { margin:0; padding:0; background:#111; color:#fff; }
 canvas { display:none; }
 </style>
+<script src="./pwa-nav.js" defer></script>
 </head>
 <body><section class="panel" style="margin:12px auto;max-width:760px"><a href="./index.html">← ツール一覧</a><h1>立ち絵ドット変換</h1><p>元のドット変換エンジンを使い、画像をまとめて1倍サイズのPNGに変換します。結果をタップして保存してください。</p><label>画像を選択（複数可）<input type="file" id="files" accept="image/*" multiple></label><div class="row"><label>出力モード<select id="mode"><option value="canvas">固定キャンバス</option><option value="width">指定幅（比率維持）</option></select></label><label>固定キャンバス<select id="canvasSize"><option value="256x384">256 × 384</option><option value="192x288">192 × 288</option><option value="160x240">160 × 240</option></select></label><label>指定幅<select id="width"><option>256</option><option>192</option><option>160</option><option>128</option></select></label><label>代表色<select id="sample"><option value="mean">mean</option><option value="median">median</option></select></label><label>顔保護<select id="face"><option value="very strong">very strong</option><option value="strong">strong</option><option value="normal">normal</option></select></label></div><button id="convert">変換</button><p id="status" role="status"></p><div id="output"></div></section>
 <script>
